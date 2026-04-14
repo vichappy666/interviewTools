@@ -50,7 +50,6 @@ class SettingsDialog(QDialog):
         self.model_inputs = {}
         for p in ["claude", "openai", "grok", "gemini"]:
             key = QLineEdit(config["llm"][p]["api_key"])
-            key.setEchoMode(QLineEdit.Password)
             model = QLineEdit(config["llm"][p]["model"])
             self.key_inputs[p] = key
             self.model_inputs[p] = model
