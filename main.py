@@ -1,8 +1,6 @@
 import sys
 import threading
 import traceback
-from dotenv import load_dotenv
-load_dotenv()
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QTimer
