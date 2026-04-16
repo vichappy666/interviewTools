@@ -176,13 +176,13 @@ class SettingsDialog(QDialog):
         llm_layout.setSpacing(12)
 
         self.llm_provider = QComboBox()
-        self.llm_provider.addItems(["claude", "openai", "grok", "gemini"])
+        self.llm_provider.addItems(["claude", "openai", "grok", "gemini", "deepseek"])
         self.llm_provider.setCurrentText(config["llm"]["provider"])
         llm_layout.addRow("当前模型", self.llm_provider)
 
         self.key_inputs = {}
         self.model_inputs = {}
-        for p in ["claude", "openai", "grok", "gemini"]:
+        for p in ["claude", "openai", "grok", "gemini", "deepseek"]:
             key = QLineEdit(config["llm"][p]["api_key"])
             model = QLineEdit(config["llm"][p]["model"])
             self.key_inputs[p] = key
@@ -215,7 +215,7 @@ class SettingsDialog(QDialog):
         self.config["asr"]["volcengine"]["app_key"] = self.volc_appkey.text()
         self.config["asr"]["volcengine"]["access_key"] = self.volc_access_key.text()
         self.config["llm"]["provider"] = self.llm_provider.currentText()
-        for p in ["claude", "openai", "grok", "gemini"]:
+        for p in ["claude", "openai", "grok", "gemini", "deepseek"]:
             self.config["llm"][p]["api_key"] = self.key_inputs[p].text()
             self.config["llm"][p]["model"] = self.model_inputs[p].text()
         self.config["audio"]["input_device_name"] = self.audio_device.text()

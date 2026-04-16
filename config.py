@@ -41,7 +41,8 @@ DEFAULT_CONFIG = {
         "claude":  {"api_key": "", "model": "claude-haiku-4-5-20251001"},
         "openai":  {"api_key": "", "model": "gpt-5.4-nano"},
         "grok":    {"api_key": "", "model": "grok-4"},
-        "gemini":  {"api_key": "", "model": "gemini-3-flash-preview"}
+        "gemini":  {"api_key": "", "model": "gemini-3-flash-preview"},
+        "deepseek":{"api_key": "", "model": "deepseek-chat"}
     },
     "audio": {
         "input_device_name": "MacBook Pro麦克风",
@@ -84,6 +85,7 @@ def load_config():
         "openai_api_key": ("llm", "openai", "api_key"),
         "grok_api_key": ("llm", "grok", "api_key"),
         "gemini_api_key": ("llm", "gemini", "api_key"),
+        "deepseek_api_key": ("llm", "deepseek", "api_key"),
         "volcengine_app_key": ("asr", "volcengine", "app_key"),
         "volcengine_access_key": ("asr", "volcengine", "access_key"),
     }

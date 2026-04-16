@@ -80,6 +80,29 @@ class GrokProvider(LLMProvider):
         return resp.choices[0].message.content.strip()
 
 
+class DeepSeekProvider(LLMProvider):
+    def __init__(self, cfg):
+        from openai import OpenAI
+        if not cfg["api_key"]:
+            raise RuntimeError("DeepSeek API key 未配置")
+        self.client = OpenAI(
+            api_key=cfg["api_key"],
+            base_url="https://api.deepseek.com"
+        )
+        self.model = cfg["model"]
+
+    def ask(self, question):
+        resp = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=600,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": question}
+            ]
+        )
+        return resp.choices[0].message.content.strip()
+
+
 class GeminiProvider(LLMProvider):
     def __init__(self, cfg):
         import google.generativeai as genai
@@ -100,9 +123,10 @@ def build_llm(config):
     provider = config["llm"]["provider"]
     cfg = config["llm"][provider]
     mapping = {
-        "claude": ClaudeProvider,
-        "openai": OpenAIProvider,
-        "grok":   GrokProvider,
-        "gemini": GeminiProvider
+        "claude":   ClaudeProvider,
+        "openai":   OpenAIProvider,
+        "grok":     GrokProvider,
+        "gemini":   GeminiProvider,
+        "deepseek": DeepSeekProvider
     }
     return mapping[provider](cfg)
