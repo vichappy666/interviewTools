@@ -1,13 +1,11 @@
 import sounddevice as sd
-import queue
 
 
 class AudioCapture:
-    def __init__(self, device_name, sample_rate=16000, chunk_seconds=2.0):
+    def __init__(self, device_name, sample_rate=16000, on_audio=None):
         self.sample_rate = sample_rate
-        self.chunk_size = int(sample_rate * chunk_seconds)
         self.device_index = self._find_device(device_name)
-        self.queue = queue.Queue()
+        self.on_audio = on_audio
         self.stream = None
 
     def _find_device(self, name):
@@ -20,14 +18,14 @@ class AudioCapture:
             if d["max_input_channels"] > 0
         )
         raise RuntimeError(
-            f"找不到输入设备 '{name}'。请确认已安装 BlackHole 并在音频 MIDI 设置里配置好。\n"
-            f"当前可用输入设备:\n{available}"
+            f"找不到输入设备 '{name}'。\n当前可用输入设备:\n{available}"
         )
 
     def _callback(self, indata, frames, time_info, status):
         if status:
             print(f"[audio] {status}")
-        self.queue.put(indata[:, 0].copy())
+        if self.on_audio:
+            self.on_audio(indata[:, 0].copy())
 
     def start(self):
         self.stream = sd.InputStream(
@@ -36,7 +34,7 @@ class AudioCapture:
             channels=1,
             dtype="float32",
             callback=self._callback,
-            blocksize=self.chunk_size
+            blocksize=1600,  # 100ms at 16kHz
         )
         self.stream.start()
 
@@ -48,9 +46,3 @@ class AudioCapture:
             except Exception:
                 pass
             self.stream = None
-
-    def read_chunk(self, timeout=None):
-        try:
-            return self.queue.get(timeout=timeout)
-        except queue.Empty:
-            return None
