@@ -42,7 +42,7 @@ class Worker(QObject):
                 self.config["audio"]["chunk_seconds"]
             )
             self.asr = build_asr(self.config)
-            self.llm = build_llm(self.config)
+            # self.llm = build_llm(self.config)
             self.detector = QuestionDetector(
                 self.config["question_detection"]["silence_seconds"],
                 self.config["question_detection"]["min_chars"]
@@ -84,15 +84,8 @@ class Worker(QObject):
 
     def _handle_question(self, question):
         self.question_ready.emit(question)
-        self.status.emit("思考中...")
-        try:
-            answer = self.llm.ask(question)
-            if answer and answer.strip() != "[非问题]":
-                self.answer_ready.emit(answer)
-            self.status.emit("监听中")
-        except Exception as e:
-            self.error.emit(f"LLM 错误: {e}")
-            self.status.emit("监听中")
+        # LLM 暂时跳过，只测试语音转文字
+        self.status.emit("监听中")
 
 
 def main():
