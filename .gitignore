@@ -17,6 +17,9 @@ venv/
 # OS
 .DS_Store
 
+# Docs (local only)
+docs/
+
 # Project config (may contain API keys)
 config.json
 .env

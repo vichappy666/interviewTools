@@ -30,30 +30,22 @@ def _load_keys_from_db():
 
 DEFAULT_CONFIG = {
     "asr": {
-        "engine": "faster_whisper",
-        "faster_whisper": {
-            "model": "large-v3",
-            "device": "auto",
-            "compute_type": "int8",
-            "initial_prompt": "这是一场软件工程师技术面试,涉及 Python Java Go Kubernetes Docker Redis MySQL PostgreSQL gRPC Kafka RabbitMQ LLM RAG Transformer 分布式 微服务 高并发 缓存 消息队列 数据库 算法 系统设计."
-        },
-        "aliyun": {
+        "volcengine": {
             "app_key": "",
-            "token": "",
-            "url": "wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1"
+            "access_key": "",
+            "resource_id": "volc.bigasr.sauc.duration"
         }
     },
     "llm": {
-        "provider": "grok", # 默认的模型，目前最快是grok
+        "provider": "grok",
         "claude":  {"api_key": "", "model": "claude-haiku-4-5-20251001"},
         "openai":  {"api_key": "", "model": "gpt-5.4-nano"},
         "grok":    {"api_key": "", "model": "grok-4"},
         "gemini":  {"api_key": "", "model": "gemini-3-flash-preview"}
     },
     "audio": {
-        "input_device_name": "BlackHole 2ch",
+        "input_device_name": "MacBook Pro麦克风",
         "sample_rate": 16000,
-        "chunk_seconds": 2.0
     },
     "question_detection": {
         "silence_seconds": 1.2,
@@ -92,6 +84,8 @@ def load_config():
         "openai_api_key": ("llm", "openai", "api_key"),
         "grok_api_key": ("llm", "grok", "api_key"),
         "gemini_api_key": ("llm", "gemini", "api_key"),
+        "volcengine_app_key": ("asr", "volcengine", "app_key"),
+        "volcengine_access_key": ("asr", "volcengine", "access_key"),
     }
     for db_key, path in key_mapping.items():
         if db_key in db_keys and db_keys[db_key]:
