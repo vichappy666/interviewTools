@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import threading
 import numpy as np
 from volcengine_audio import VolcengineAsrFunctionsV3
@@ -32,6 +33,7 @@ class StreamingASR:
         self._connected = False
         self._stop_event = None
         self._committed = ""  # 当前会话中已作为 final 推出的前缀
+        self._recent_finals = []  # 最近已 emit 的句子归一化形式，用于去重
 
     def start(self):
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -153,6 +155,7 @@ class StreamingASR:
             self._seq = 2
             self._connected = True
             self._committed = ""
+            self._recent_finals = []
             print("[asr] 火山引擎流式 ASR 已连接")
 
             await self._recv_loop(ws)
@@ -188,23 +191,38 @@ class StreamingASR:
             if parsed.get("is_last_package"):
                 tail = self._tail(text)
                 if tail:
-                    self.on_final(tail)
+                    self._emit_finals_dedup(tail)
                 self._committed = ""
             elif text:
                 self._segment(text)
 
     _SENTENCE_ENDERS = "。！？!?；;\n"
+    _NORMALIZE_STRIP = re.compile(r"[\s。！？!?，,\.;；：:、\"'""''【】\[\]（）()\-]+")
+    MAX_RECENT_FINALS = 30
 
     def _tail(self, text: str) -> str:
         """返回 text 中尚未作为 final 推出的尾部。"""
         if text.startswith(self._committed):
             return text[len(self._committed):]
-        return text  # 服务端重置了文本
+        # 前缀不匹配：服务端改写了早先文本。找 LCP，缩到共同前缀
+        lcp_len = 0
+        for i in range(min(len(self._committed), len(text))):
+            if self._committed[i] != text[i]:
+                break
+            lcp_len += 1
+        self._committed = self._committed[:lcp_len]
+        return text[lcp_len:]
 
     def _segment(self, text: str):
-        """按句末标点切分：已完成的句子走 on_final，剩余尾巴走 on_partial。"""
+        """按句末标点切分：已完成的句子走 on_final（去重），剩余尾巴走 on_partial。"""
         if not text.startswith(self._committed):
-            self._committed = ""
+            # 服务端改写了历史文本；找 LCP 而不是全部重置
+            lcp_len = 0
+            for i in range(min(len(self._committed), len(text))):
+                if self._committed[i] != text[i]:
+                    break
+                lcp_len += 1
+            self._committed = self._committed[:lcp_len]
 
         start = len(self._committed)
         last_boundary = -1
@@ -213,13 +231,47 @@ class StreamingASR:
                 last_boundary = i
 
         if last_boundary >= start:
-            finalized = text[start:last_boundary + 1].strip()
-            if finalized:
-                self.on_final(finalized)
+            finalized = text[start:last_boundary + 1]
+            self._emit_finals_dedup(finalized)
             self._committed = text[:last_boundary + 1]
 
         tail = text[len(self._committed):]
         self.on_partial(tail)
+
+    def _emit_finals_dedup(self, chunk: str):
+        """把 chunk 按句末标点切成单句，每句归一化后查重，未见过才 emit。"""
+        sentences = self._split_sentences(chunk)
+        for sentence in sentences:
+            s = sentence.strip()
+            if not s:
+                continue
+            norm = self._normalize(s)
+            if not norm:
+                continue
+            if norm in self._recent_finals:
+                continue
+            self._recent_finals.append(norm)
+            if len(self._recent_finals) > self.MAX_RECENT_FINALS:
+                self._recent_finals.pop(0)
+            self.on_final(s)
+
+    @classmethod
+    def _split_sentences(cls, text: str):
+        """按句末标点切成 [句1, 句2, ...]，每句带尾标点。尾部无标点的残片单独作为一项。"""
+        parts = []
+        buf = ""
+        for ch in text:
+            buf += ch
+            if ch in cls._SENTENCE_ENDERS:
+                parts.append(buf)
+                buf = ""
+        if buf:
+            parts.append(buf)
+        return parts
+
+    @classmethod
+    def _normalize(cls, s: str) -> str:
+        return cls._NORMALIZE_STRIP.sub("", s).lower()
 
     async def _send_audio(self, pcm_bytes: bytes):
         """发送一帧音频"""

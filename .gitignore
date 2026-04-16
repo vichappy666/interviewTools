@@ -20,6 +20,9 @@ venv/
 # Docs (local only)
 docs/
 
+# claude superpowers sills
+.superpowers/
+
 # Project config (may contain API keys)
 config.json
 .env
