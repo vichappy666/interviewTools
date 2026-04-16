@@ -1,4 +1,11 @@
+import os
 from abc import ABC, abstractmethod
+
+# DeepSeek 是国内服务，绕过系统代理直连
+for _key in ("NO_PROXY", "no_proxy"):
+    _existing = os.environ.get(_key, "")
+    if "api.deepseek.com" not in _existing:
+        os.environ[_key] = (_existing + ",api.deepseek.com").lstrip(",")
 
 SYSTEM_PROMPT = """你是一位资深软件工程师,正在参加技术面试。
 我会给你面试官提出的问题。请你给出一个清晰、专业、结构化的回答。

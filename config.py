@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
         }
     },
     "llm": {
-        "provider": "grok",
+        "provider": "deepseek",
         "claude":  {"api_key": "", "model": "claude-haiku-4-5-20251001"},
         "openai":  {"api_key": "", "model": "gpt-5.4-nano"},
         "grok":    {"api_key": "", "model": "grok-4"},

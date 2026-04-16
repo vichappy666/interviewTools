@@ -31,6 +31,7 @@ class StreamingASR:
         self._seq = 0
         self._connected = False
         self._stop_event = None
+        self._committed = ""  # 当前会话中已作为 final 推出的前缀
 
     def start(self):
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -151,6 +152,7 @@ class StreamingASR:
 
             self._seq = 2
             self._connected = True
+            self._committed = ""
             print("[asr] 火山引擎流式 ASR 已连接")
 
             await self._recv_loop(ws)
@@ -184,10 +186,40 @@ class StreamingASR:
             text = result.get("text", "") if isinstance(result, dict) else ""
 
             if parsed.get("is_last_package"):
-                if text:
-                    self.on_final(text)
+                tail = self._tail(text)
+                if tail:
+                    self.on_final(tail)
+                self._committed = ""
             elif text:
-                self.on_partial(text)
+                self._segment(text)
+
+    _SENTENCE_ENDERS = "。！？!?；;\n"
+
+    def _tail(self, text: str) -> str:
+        """返回 text 中尚未作为 final 推出的尾部。"""
+        if text.startswith(self._committed):
+            return text[len(self._committed):]
+        return text  # 服务端重置了文本
+
+    def _segment(self, text: str):
+        """按句末标点切分：已完成的句子走 on_final，剩余尾巴走 on_partial。"""
+        if not text.startswith(self._committed):
+            self._committed = ""
+
+        start = len(self._committed)
+        last_boundary = -1
+        for i in range(start, len(text)):
+            if text[i] in self._SENTENCE_ENDERS:
+                last_boundary = i
+
+        if last_boundary >= start:
+            finalized = text[start:last_boundary + 1].strip()
+            if finalized:
+                self.on_final(finalized)
+            self._committed = text[:last_boundary + 1]
+
+        tail = text[len(self._committed):]
+        self.on_partial(tail)
 
     async def _send_audio(self, pcm_bytes: bytes):
         """发送一帧音频"""
