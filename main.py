@@ -1,5 +1,6 @@
 import sys
 import threading
+import time
 import traceback
 
 from PySide6.QtWidgets import QApplication
@@ -98,6 +99,9 @@ class Worker(QObject):
             return
         self._pending_token += 1
         token = self._pending_token
+        provider = self.config["llm"]["provider"]
+        q_preview = question.strip().replace("\n", " ")[:60]
+        print(f"[llm] ask token={token} provider={provider} q='{q_preview}'")
         self.status.emit("思考中...")
         threading.Thread(
             target=self._dispatch_parallel_stream,
@@ -137,15 +141,26 @@ class Worker(QObject):
 
         self.section_start.emit(section_name)
         prompt = SECTION_PROMPTS[section_name]
+        provider = self.config["llm"]["provider"]
+        t0 = time.time()
+        first_logged = False
+        n_chunks = 0
 
         stream_gen = self.llm.ask_stream(question, system_prompt=prompt)
         try:
             for chunk in stream_gen:
                 if token != self._pending_token:
                     return
+                if not first_logged:
+                    first_logged = True
+                    ms = int((time.time() - t0) * 1000)
+                    print(f"[llm] {provider} {section_name} ✓ connected, first chunk in {ms}ms")
+                n_chunks += 1
                 if token == self._pending_token:
                     self.section_chunk.emit(section_name, chunk)
         except Exception as e:
+            elapsed = time.time() - t0
+            print(f"[llm] {provider} {section_name} ✗ error after {elapsed:.1f}s: {e}")
             if token == self._pending_token:
                 self.error.emit(f"LLM 错误 ({section_name}): {e}")
             return
@@ -156,6 +171,8 @@ class Worker(QObject):
             except Exception:
                 pass
 
+        elapsed = time.time() - t0
+        print(f"[llm] {provider} {section_name} ✓ done in {elapsed:.1f}s, {n_chunks} chunks")
         if token == self._pending_token:
             self.section_end.emit(section_name)
 

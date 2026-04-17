@@ -540,7 +540,9 @@ class _SectionPanel(QWidget):
 
         self.body = QTextBrowser()
         self.body.setOpenExternalLinks(False)
-        self.body.setMinimumHeight(60)
+        # 锁初始高度为 60；_resize_to_content 后续根据内容增长。
+        # 不设的话 QTextBrowser sizeHint 默认 ~256px，没回内容时三段会撑到屏幕高
+        self.body.setFixedHeight(60)
         self.body.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.body.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.body.document().documentLayout().documentSizeChanged.connect(self._resize_to_content)

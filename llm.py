@@ -83,7 +83,8 @@ class ClaudeProvider(LLMProvider):
         from anthropic import Anthropic
         if not cfg["api_key"]:
             raise RuntimeError("Claude API key 未配置")
-        self.client = Anthropic(api_key=cfg["api_key"])
+        # 30s 超时：连不上时快速报错，不无限挂起
+        self.client = Anthropic(api_key=cfg["api_key"], timeout=30.0)
         self.model = cfg["model"]
 
     def ask(self, question, system_prompt=None):
@@ -101,7 +102,7 @@ class OpenAIProvider(LLMProvider):
         from openai import OpenAI
         if not cfg["api_key"]:
             raise RuntimeError("OpenAI API key 未配置")
-        self.client = OpenAI(api_key=cfg["api_key"])
+        self.client = OpenAI(api_key=cfg["api_key"], timeout=30.0)
         self.model = cfg["model"]
 
     def ask(self, question, system_prompt=None):
@@ -123,7 +124,8 @@ class GrokProvider(LLMProvider):
             raise RuntimeError("Grok API key 未配置")
         self.client = OpenAI(
             api_key=cfg["api_key"],
-            base_url="https://api.x.ai/v1"
+            base_url="https://api.x.ai/v1",
+            timeout=30.0,
         )
         self.model = cfg["model"]
 
@@ -146,7 +148,8 @@ class DeepSeekProvider(LLMProvider):
             raise RuntimeError("DeepSeek API key 未配置")
         self.client = OpenAI(
             api_key=cfg["api_key"],
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com",
+            timeout=30.0,
         )
         self.model = cfg["model"]
 
