@@ -17,6 +17,7 @@ asyncio → Qt：WebSocket 收到命令后 `self.ask_requested.emit(text)`，
 
 import asyncio
 import json
+import socket
 import threading
 from pathlib import Path
 
@@ -24,6 +25,74 @@ from aiohttp import web, WSMsgType
 from PySide6.QtCore import QObject, Signal, Qt
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
+def _score_ip(ip: str) -> int:
+    """越大越像真实局域网 IP。"""
+    try:
+        parts = [int(x) for x in ip.split(".")]
+        if len(parts) != 4:
+            return -1
+        a, b, c, d = parts
+    except Exception:
+        return -1
+    if a == 127:
+        return -1
+    if a == 198 and b in (18, 19):
+        return -1  # RFC2544 benchmark，常见于 ClashX / Surge 代理
+    if a == 169 and b == 254:
+        return 0   # link-local
+    if a == 192 and b == 168:
+        return 5   # 家用路由最典型
+    if a == 10:
+        return 4
+    if a == 172 and 16 <= b <= 31:
+        return 4
+    return 1       # 公网或其他
+
+
+def get_lan_ip() -> str | None:
+    """尽力找出真实局域网 IP；代理 / VPN 环境下会过滤 198.18/15 等虚假地址。"""
+    candidates: list[str] = []
+
+    # 1) UDP 路由表技巧（可能被 VPN 拦截）
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        candidates.append(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+
+    # 2) hostname 解析（Mac 常能给出多个网卡 IP）
+    try:
+        hostname = socket.gethostname()
+        _, _, ips = socket.gethostbyname_ex(hostname)
+        candidates.extend(ips)
+    except Exception:
+        pass
+
+    # 3) mDNS .local 兜底（Mac 一般可用）
+    try:
+        hostname = socket.gethostname()
+        if not hostname.endswith(".local"):
+            hostname = hostname + ".local"
+        ip = socket.gethostbyname(hostname)
+        candidates.append(ip)
+    except Exception:
+        pass
+
+    # 打分挑最像局域网的
+    best = None
+    best_score = 0
+    for ip in candidates:
+        if not ip or ip == "0.0.0.0":
+            continue
+        score = _score_ip(ip)
+        if score > best_score:
+            best = ip
+            best_score = score
+    return best
 
 
 class WebBridge(QObject):
@@ -96,6 +165,10 @@ class WebBridge(QObject):
         site = web.TCPSite(self._runner, self.host, self.port)
         await site.start()
         print(f"[web] listening on http://{self.host}:{self.port}")
+        if self.host in ("0.0.0.0", "::"):
+            lan = get_lan_ip()
+            if lan:
+                print(f"[web] LAN (同 WiFi 手机可访问): http://{lan}:{self.port}")
         ready.set()
 
     async def _shutdown(self):

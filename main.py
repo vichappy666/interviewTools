@@ -11,7 +11,7 @@ from asr import StreamingASR
 from llm import build_llm
 from question_detector import QuestionDetector
 from ui import FloatingWindow
-from web_server import WebBridge
+from web_server import WebBridge, get_lan_ip
 
 
 class Worker(QObject):
@@ -242,8 +242,14 @@ def main():
         # 浏览器发问 → worker（跨线程走 QueuedConnection）
         bridge.ask_requested.connect(worker.ask, Qt.QueuedConnection)
         bridge.start()
-        # Qt UI 的 🌐 按钮需要知道真实 URL
-        window.set_web_url(f"http://{bridge.host}:{bridge.port}")
+        # Qt UI 的 🌐 按钮需要知道真实 URL。绑到 0.0.0.0 时额外算出一个局域网 URL 给手机用
+        local_url = f"http://127.0.0.1:{bridge.port}"
+        lan_url = None
+        if bridge.host in ("0.0.0.0", "::"):
+            lan_ip = get_lan_ip()
+            if lan_ip:
+                lan_url = f"http://{lan_ip}:{bridge.port}"
+        window.set_web_url(local_url, lan_url)
 
     def restart_worker():
         save_config(window.config)
