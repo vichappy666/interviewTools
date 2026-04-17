@@ -1,3 +1,5 @@
+import sys
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
     QDialog, QFormLayout, QLineEdit, QComboBox, QDialogButtonBox, QTabWidget,
@@ -73,6 +75,14 @@ QPushButton#icon {
 QPushButton#icon:hover {
     background-color: rgba(255, 255, 255, 18);
     color: #aabbcc;
+}
+QPushButton#icon:checked {
+    background-color: rgba(70, 120, 200, 150);
+    border: 1px solid rgba(126, 184, 240, 180);
+    color: white;
+}
+QPushButton#icon:checked:hover {
+    background-color: rgba(90, 140, 220, 180);
 }
 QLabel#status_dot {
     color: #4ade80;
@@ -823,6 +833,14 @@ class FloatingWindow(QWidget):
         self.title = QLabel("面试助手")
         self.title.setObjectName("title")
 
+        self.pin_btn = QPushButton("📌")
+        self.pin_btn.setObjectName("icon")
+        self.pin_btn.setFixedSize(32, 32)
+        self.pin_btn.setCheckable(True)
+        self.pin_btn.setChecked(True)
+        self.pin_btn.setToolTip("取消置顶")
+        self.pin_btn.clicked.connect(self._toggle_pin)
+
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setObjectName("icon")
         self.settings_btn.setFixedSize(32, 32)
@@ -836,6 +854,7 @@ class FloatingWindow(QWidget):
         top.addWidget(self.status_dot)
         top.addWidget(self.title)
         top.addStretch()
+        top.addWidget(self.pin_btn)
         top.addWidget(self.settings_btn)
         top.addWidget(self.close_btn)
         cl.addLayout(top)
@@ -924,6 +943,59 @@ class FloatingWindow(QWidget):
         if dlg.exec() == QDialog.Accepted:
             self.config = dlg.apply_to_config()
             self.settings_changed.emit()
+
+    def _toggle_pin(self):
+        pinned = self.pin_btn.isChecked()
+        flags = self.windowFlags()
+        if pinned:
+            flags |= Qt.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowStaysOnTopHint
+        pos = self.pos()
+        self.setWindowFlags(flags)
+        self.move(pos)
+        self.show()
+        self.pin_btn.setToolTip("取消置顶" if pinned else "置顶")
+        self._apply_native_window_level(pinned)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # NSWindow 在 show 之后才稳定存在；每次 show 都应用一次当前状态
+        self._apply_native_window_level(self.pin_btn.isChecked())
+
+    def _apply_native_window_level(self, pinned: bool):
+        """macOS: 用 Cocoa 直接改 NSWindow level，让它浮在其他 App 之上（包括全屏应用）。"""
+        if sys.platform != "darwin":
+            return
+        try:
+            import objc
+            from AppKit import (
+                NSStatusWindowLevel,
+                NSNormalWindowLevel,
+                NSWindowCollectionBehaviorCanJoinAllSpaces,
+                NSWindowCollectionBehaviorFullScreenAuxiliary,
+                NSWindowCollectionBehaviorDefault,
+            )
+            ns_view = objc.objc_object(c_void_p=int(self.winId()))
+            ns_window = ns_view.window()
+            if ns_window is None:
+                return
+            if pinned:
+                ns_window.setLevel_(NSStatusWindowLevel)
+                ns_window.setCollectionBehavior_(
+                    NSWindowCollectionBehaviorCanJoinAllSpaces
+                    | NSWindowCollectionBehaviorFullScreenAuxiliary
+                )
+                # 关键：Qt.Tool 对应 NSPanel，默认 App 失焦会 orderOut 自己
+                ns_window.setHidesOnDeactivate_(False)
+                ns_window.setCanHide_(False)
+            else:
+                ns_window.setLevel_(NSNormalWindowLevel)
+                ns_window.setCollectionBehavior_(NSWindowCollectionBehaviorDefault)
+                ns_window.setHidesOnDeactivate_(False)
+                ns_window.setCanHide_(True)
+        except Exception as ex:
+            print(f"[pin] macOS level apply failed: {ex}")
 
     # 窗口拖动
     def mousePressEvent(self, e):
