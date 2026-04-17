@@ -1,4 +1,5 @@
 import sys
+import webbrowser
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
@@ -841,6 +842,13 @@ class FloatingWindow(QWidget):
         self.pin_btn.setToolTip("取消置顶")
         self.pin_btn.clicked.connect(self._toggle_pin)
 
+        self.web_btn = QPushButton("🌐")
+        self.web_btn.setObjectName("icon")
+        self.web_btn.setFixedSize(32, 32)
+        self.web_btn.setToolTip("在浏览器打开")
+        self.web_btn.clicked.connect(self._open_web)
+        self._web_url = None
+
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setObjectName("icon")
         self.settings_btn.setFixedSize(32, 32)
@@ -855,6 +863,7 @@ class FloatingWindow(QWidget):
         top.addWidget(self.title)
         top.addStretch()
         top.addWidget(self.pin_btn)
+        top.addWidget(self.web_btn)
         top.addWidget(self.settings_btn)
         top.addWidget(self.close_btn)
         cl.addLayout(top)
@@ -943,6 +952,15 @@ class FloatingWindow(QWidget):
         if dlg.exec() == QDialog.Accepted:
             self.config = dlg.apply_to_config()
             self.settings_changed.emit()
+
+    def set_web_url(self, url: str):
+        self._web_url = url
+        self.web_btn.setToolTip(f"在浏览器打开 {url}")
+
+    def _open_web(self):
+        if not self._web_url:
+            return
+        webbrowser.open(self._web_url)
 
     def _toggle_pin(self):
         pinned = self.pin_btn.isChecked()
