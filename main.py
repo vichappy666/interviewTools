@@ -22,7 +22,6 @@ class Worker(QObject):
     section_start = Signal(str)           # name
     section_chunk = Signal(str, str)      # name, text
     section_end = Signal(str)             # name
-    answer_non_question = Signal()
     status = Signal(str)
     error = Signal(str)
 
@@ -34,7 +33,6 @@ class Worker(QObject):
         self.llm = None
         self.detector = None
         self._pending_token = 0
-        self._non_q_flags = {}  # token → bool，某段检测到 [非问题] 后其他段应停止
 
     def update_config(self, config):
         self.config = config
@@ -112,8 +110,6 @@ class Worker(QObject):
         if token != self._pending_token:
             return
         self.answer_started.emit(question)
-        # per-token 标志：某段检测到 [非问题] 时，其他段看到这个标志直接退出且不再 emit
-        self._non_q_flags[token] = False
 
         threads = []
         for section in ("key_points", "script", "full"):
@@ -131,8 +127,6 @@ class Worker(QObject):
         # 过期 token 不动 status
         if token == self._pending_token:
             self.status.emit("监听中")
-        # 清理 flag
-        self._non_q_flags.pop(token, None)
 
     def _run_section_stream(self, question: str, section_name: str, token: int):
         """单段：向 LLM 拉这段的流，边拉边 emit section_chunk。"""
@@ -144,46 +138,13 @@ class Worker(QObject):
         self.section_start.emit(section_name)
         prompt = SECTION_PROMPTS[section_name]
 
-        accumulated = ""
-        non_q_check_done = False
-
         stream_gen = self.llm.ask_stream(question, system_prompt=prompt)
         try:
             for chunk in stream_gen:
                 if token != self._pending_token:
                     return
-                if self._non_q_flags.get(token):
-                    return
-                if not non_q_check_done:
-                    accumulated += chunk
-                    stripped = accumulated.lstrip()
-                    # 累积足够字符后决定
-                    if len(stripped) >= 8 or "\n" in stripped:
-                        if stripped.startswith("[非问题]"):
-                            if not self._non_q_flags.get(token):
-                                self._non_q_flags[token] = True
-                                if token == self._pending_token:
-                                    self.answer_non_question.emit()
-                            return
-                        # 不是非问题，冲刷累积内容
-                        if token == self._pending_token:
-                            self.section_chunk.emit(section_name, accumulated)
-                        accumulated = ""
-                        non_q_check_done = True
-                else:
-                    if token == self._pending_token:
-                        self.section_chunk.emit(section_name, chunk)
-
-            # 流结束，冲刷剩余
-            if not non_q_check_done and accumulated:
-                if accumulated.lstrip().startswith("[非问题]"):
-                    if not self._non_q_flags.get(token):
-                        self._non_q_flags[token] = True
-                        if token == self._pending_token:
-                            self.answer_non_question.emit()
-                    return
                 if token == self._pending_token:
-                    self.section_chunk.emit(section_name, accumulated)
+                    self.section_chunk.emit(section_name, chunk)
         except Exception as e:
             if token == self._pending_token:
                 self.error.emit(f"LLM 错误 ({section_name}): {e}")
@@ -195,7 +156,7 @@ class Worker(QObject):
             except Exception:
                 pass
 
-        if token == self._pending_token and not self._non_q_flags.get(token):
+        if token == self._pending_token:
             self.section_end.emit(section_name)
 
 
@@ -214,7 +175,6 @@ def main():
     worker.section_start.connect(window.on_section_start)
     worker.section_chunk.connect(window.on_section_chunk)
     worker.section_end.connect(window.on_section_end)
-    worker.answer_non_question.connect(window.on_non_question)
     worker.status.connect(window.set_status)
     worker.error.connect(lambda msg: window.set_status(f"错误: {msg}"))
 
@@ -236,7 +196,6 @@ def main():
         worker.section_start.connect(bridge.on_section_start)
         worker.section_chunk.connect(bridge.on_section_chunk)
         worker.section_end.connect(bridge.on_section_end)
-        worker.answer_non_question.connect(bridge.on_answer_non_question)
         worker.status.connect(bridge.on_status)
         worker.error.connect(bridge.on_error)
         # 浏览器发问 → worker（跨线程走 QueuedConnection）
