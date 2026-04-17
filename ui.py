@@ -49,6 +49,18 @@ QTextEdit {
 QTextEdit:focus {
     border: 1px solid rgba(100, 140, 200, 60);
 }
+QLineEdit#ask_input {
+    background-color: rgba(0, 0, 0, 60);
+    border: 1px solid rgba(100, 140, 200, 25);
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: #e0e8f0;
+    font-size: 13px;
+    selection-background-color: rgba(100, 140, 200, 80);
+}
+QLineEdit#ask_input:focus {
+    border: 1px solid rgba(100, 140, 200, 80);
+}
 QPushButton#primary {
     background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
         stop:0 rgba(70, 120, 200, 200),
@@ -985,9 +997,14 @@ class FloatingWindow(QWidget):
         section1 = QLabel("实时转写")
         section1.setObjectName("section")
         self.transcript_view = TranscriptView()
-        self.transcript_view.setFixedHeight(260)
+        self.transcript_view.setFixedHeight(220)
+        self.ask_input = QLineEdit()
+        self.ask_input.setObjectName("ask_input")
+        self.ask_input.setPlaceholderText("手动输入问题，回车发问...")
+        self.ask_input.returnPressed.connect(self._on_ask_input_return)
         left_col.addWidget(section1)
         left_col.addWidget(self.transcript_view)
+        left_col.addWidget(self.ask_input)
 
         right_col = QVBoxLayout()
         right_col.setSpacing(6)
@@ -1060,6 +1077,13 @@ class FloatingWindow(QWidget):
         if dlg.exec() == QDialog.Accepted:
             self.config = dlg.apply_to_config()
             self.settings_changed.emit()
+
+    def _on_ask_input_return(self):
+        text = self.ask_input.text().strip()
+        if not text:
+            return
+        self.ask_input.clear()
+        self.ask_requested.emit(text)
 
     def set_web_url(self, local_url: str, lan_url: str | None = None):
         self._web_url = local_url
