@@ -51,6 +51,11 @@ DEFAULT_CONFIG = {
     "question_detection": {
         "silence_seconds": 1.2,
         "min_chars": 6
+    },
+    "web": {
+        "enabled": True,
+        "host": "127.0.0.1",
+        "port": 8765,
     }
 }
 

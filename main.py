@@ -3,7 +3,7 @@ import threading
 import traceback
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject, Signal, QTimer
+from PySide6.QtCore import QObject, Signal, QTimer, Qt
 
 from config import load_config, save_config
 from audio_capture import AudioCapture
@@ -11,6 +11,7 @@ from asr import StreamingASR
 from llm import build_llm
 from question_detector import QuestionDetector
 from ui import FloatingWindow
+from web_server import WebBridge
 
 
 class Worker(QObject):
@@ -220,6 +221,30 @@ def main():
     # 用户点击列表 or 气泡 → Worker.ask
     window.ask_requested.connect(worker.ask)
 
+    # Web 镜像：同一批信号再喂一份给 bridge，浏览器端同步
+    web_cfg = config.get("web", {})
+    bridge = None
+    if web_cfg.get("enabled", True):
+        bridge = WebBridge(
+            host=web_cfg.get("host", "127.0.0.1"),
+            port=int(web_cfg.get("port", 8765)),
+        )
+        worker.partial_text.connect(bridge.on_partial)
+        worker.final_text.connect(bridge.on_final)
+        worker.question_ready.connect(bridge.on_question_ready)
+        worker.answer_started.connect(bridge.on_answer_started)
+        worker.section_start.connect(bridge.on_section_start)
+        worker.section_chunk.connect(bridge.on_section_chunk)
+        worker.section_end.connect(bridge.on_section_end)
+        worker.answer_non_question.connect(bridge.on_answer_non_question)
+        worker.status.connect(bridge.on_status)
+        worker.error.connect(bridge.on_error)
+        # 浏览器发问 → worker（跨线程走 QueuedConnection）
+        bridge.ask_requested.connect(worker.ask, Qt.QueuedConnection)
+        bridge.start()
+        # Qt UI 的 🌐 按钮需要知道真实 URL
+        window.set_web_url(f"http://{bridge.host}:{bridge.port}")
+
     def restart_worker():
         save_config(window.config)
         worker.update_config(window.config)
@@ -229,7 +254,11 @@ def main():
     window.settings_changed.connect(restart_worker)
 
     worker.start()
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    finally:
+        if bridge:
+            bridge.stop()
 
 
 if __name__ == "__main__":
