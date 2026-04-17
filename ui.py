@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit,
     QDialog, QFormLayout, QLineEdit, QComboBox, QDialogButtonBox, QTabWidget,
     QGraphicsDropShadowEffect, QListWidget, QListWidgetItem, QTextBrowser,
-    QSizePolicy, QScrollArea
+    QSizePolicy, QScrollArea, QCheckBox
 )
 from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QTimer
 from PySide6.QtGui import QColor, QTextCursor, QFont, QGuiApplication, QTextCharFormat
@@ -713,6 +713,86 @@ class SelectionPopup(QWidget):
             self.ask_requested.emit(text)
 
 
+class WebAccessDialog(QDialog):
+    """🌐 按钮点击后弹出：显示本机 / 局域网 URL + 复制 + 打开按钮。"""
+
+    def __init__(self, local_url: str, lan_url: str | None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Web 访问")
+        self.setStyleSheet(SETTINGS_STYLE)
+        self.resize(440, 220 if lan_url else 160)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 18, 18, 18)
+        lay.setSpacing(10)
+
+        title = QLabel("在浏览器里用镜像 UI")
+        title.setStyleSheet("color: #7eb8f0; font-weight: bold; font-size: 14px;")
+        lay.addWidget(title)
+
+        lay.addWidget(self._build_row("本机", local_url, primary=True))
+
+        if lan_url:
+            lay.addWidget(self._build_row("手机 / 同 WiFi", lan_url, primary=False))
+            hint = QLabel(
+                "手机连同一 WiFi → 浏览器打开上面的 URL，或复制过去粘贴。\n"
+                "⚠️ 同 WiFi 下任何人都能看，公共网络慎用。"
+            )
+        else:
+            hint = QLabel(
+                "当前仅限本机访问。想让手机 / iPad 访问：\n"
+                "打开设置 → Web 访问 → 勾选「允许局域网 / 手机访问」→ 重启 App。"
+            )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #99a8b8; font-size: 11px;")
+        lay.addWidget(hint)
+        lay.addStretch()
+
+        close = QPushButton("关闭")
+        close.clicked.connect(self.accept)
+        close.setStyleSheet(
+            "QPushButton { background: rgba(255,255,255,20); color: #e0e8f0; "
+            "border: none; border-radius: 6px; padding: 6px 16px; }"
+        )
+        row = QHBoxLayout()
+        row.addStretch()
+        row.addWidget(close)
+        lay.addLayout(row)
+
+    def _build_row(self, label_text: str, url: str, primary: bool) -> QWidget:
+        import webbrowser
+
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+
+        lbl = QLabel(label_text)
+        lbl.setFixedWidth(90)
+        lbl.setStyleSheet("color: #99a8b8;")
+
+        link = QLineEdit(url)
+        link.setReadOnly(True)
+
+        copy_btn = QPushButton("复制")
+        open_btn = QPushButton("打开" if primary else "用默认浏览器打开")
+        copy_btn.setCursor(Qt.PointingHandCursor)
+        open_btn.setCursor(Qt.PointingHandCursor)
+
+        copy_btn.clicked.connect(lambda: (
+            QGuiApplication.clipboard().setText(url),
+            copy_btn.setText("已复制 ✓"),
+            QTimer.singleShot(1500, lambda: copy_btn.setText("复制")),
+        ))
+        open_btn.clicked.connect(lambda: webbrowser.open(url))
+
+        h.addWidget(lbl)
+        h.addWidget(link, 1)
+        h.addWidget(copy_btn)
+        h.addWidget(open_btn)
+        return w
+
+
 class SettingsDialog(QDialog):
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -768,6 +848,28 @@ class SettingsDialog(QDialog):
         audio_layout.addRow("", hint)
         tabs.addTab(audio_tab, "音频")
 
+        # ===== Web 访问标签页 =====
+        web_tab = QWidget()
+        web_layout = QFormLayout(web_tab)
+        web_layout.setSpacing(12)
+
+        current_port = config.get("web", {}).get("port", 8765)
+        self.web_port = QLineEdit(str(current_port))
+        web_layout.addRow("端口", self.web_port)
+
+        web_hint = QLabel(
+            "默认已支持手机 / iPad 访问 —— 同 WiFi 下在浏览器打开 🌐 按钮里的"
+            "「手机 / 同 WiFi」URL 即可。\n"
+            "⚠️ 同 WiFi 下任何人都能看到你的面试过程，公共网络慎用。\n"
+            "想锁成仅本机：手动编辑 ~/.interview_assistant/config.json，把 web.host 改成 127.0.0.1。\n"
+            "端口修改需重启 App 生效。"
+        )
+        web_hint.setWordWrap(True)
+        web_hint.setStyleSheet("color: #556677; font-size: 11px;")
+        web_layout.addRow("", web_hint)
+
+        tabs.addTab(web_tab, "Web 访问")
+
         main = QVBoxLayout(self)
         main.setContentsMargins(16, 16, 16, 16)
         main.addWidget(tabs)
@@ -784,6 +886,12 @@ class SettingsDialog(QDialog):
             self.config["llm"][p]["api_key"] = self.key_inputs[p].text()
             self.config["llm"][p]["model"] = self.model_inputs[p].text()
         self.config["audio"]["input_device_name"] = self.audio_device.text()
+
+        web_cfg = self.config.setdefault("web", {})
+        try:
+            web_cfg["port"] = int(self.web_port.text().strip() or 8765)
+        except ValueError:
+            pass
         return self.config
 
 
@@ -798,7 +906,6 @@ class FloatingWindow(QWidget):
 
         self.setWindowFlags(
             Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
             | Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -838,8 +945,8 @@ class FloatingWindow(QWidget):
         self.pin_btn.setObjectName("icon")
         self.pin_btn.setFixedSize(32, 32)
         self.pin_btn.setCheckable(True)
-        self.pin_btn.setChecked(True)
-        self.pin_btn.setToolTip("取消置顶")
+        self.pin_btn.setChecked(False)
+        self.pin_btn.setToolTip("点击置顶")
         self.pin_btn.clicked.connect(self._toggle_pin)
 
         self.web_btn = QPushButton("🌐")
@@ -848,6 +955,7 @@ class FloatingWindow(QWidget):
         self.web_btn.setToolTip("在浏览器打开")
         self.web_btn.clicked.connect(self._open_web)
         self._web_url = None
+        self._web_lan_url = None
 
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setObjectName("icon")
@@ -953,14 +1061,19 @@ class FloatingWindow(QWidget):
             self.config = dlg.apply_to_config()
             self.settings_changed.emit()
 
-    def set_web_url(self, url: str):
-        self._web_url = url
-        self.web_btn.setToolTip(f"在浏览器打开 {url}")
+    def set_web_url(self, local_url: str, lan_url: str | None = None):
+        self._web_url = local_url
+        self._web_lan_url = lan_url
+        tip = f"本机: {local_url}"
+        if lan_url:
+            tip += f"\n手机 / 局域网: {lan_url}"
+        self.web_btn.setToolTip(tip)
 
     def _open_web(self):
         if not self._web_url:
             return
-        webbrowser.open(self._web_url)
+        dlg = WebAccessDialog(self._web_url, getattr(self, "_web_lan_url", None), self)
+        dlg.exec()
 
     def _toggle_pin(self):
         pinned = self.pin_btn.isChecked()
@@ -973,7 +1086,7 @@ class FloatingWindow(QWidget):
         self.setWindowFlags(flags)
         self.move(pos)
         self.show()
-        self.pin_btn.setToolTip("取消置顶" if pinned else "置顶")
+        self.pin_btn.setToolTip("点击取消置顶" if pinned else "点击置顶")
         self._apply_native_window_level(pinned)
 
     def showEvent(self, e):
