@@ -26,3 +26,16 @@ docs/
 # Project config (may contain API keys)
 config.json
 .env
+
+# Backend venv（独立 Python 环境）
+backend/.venv/
+backend/.env
+
+# Frontend
+web-user/node_modules/
+web-user/dist/
+web-user/.env
+
+web-admin/node_modules/
+web-admin/dist/
+web-admin/.env

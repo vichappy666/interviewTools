@@ -1,4 +1,44 @@
-# 面试助手 (Interview Assistant)
+# 面试助手（重构中）
+
+> ⚠️ **本仓库正在从「本地 Qt 工具」重构为「云端 SaaS」，详情见 [`docs/superpowers/specs/2026-04-29-account-and-frontend-design.md`](docs/superpowers/specs/2026-04-29-account-and-frontend-design.md)。**
+
+## 当前布局
+
+```
+backend/      # FastAPI 后端（重构中）
+web-user/     # Vue 3 用户端
+web-admin/    # Vue 3 管理后台
+legacy/       # 旧版本（v0.3.0 的 Qt 桌面端代码归档，不再维护）
+docs/         # 设计文档 / 实施计划
+```
+
+## 本机启动（dev）
+
+```bash
+# Backend
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # 改 DATABASE_URL / JWT_SECRET
+uvicorn app.main:app --reload --port 8000
+
+# Web-user（另一终端）
+cd web-user && npm install && npm run dev   # http://localhost:5173
+
+# Web-admin（另一终端）
+cd web-admin && npm install && npm run dev  # http://localhost:5174
+```
+
+## 旧版本
+
+v0.3.0 之前是基于 PySide6 的桌面端工具，源码已归档到 [`legacy/`](legacy/)。
+回滚命令：`git checkout v0.3.0-web-layout`。
+
+---
+
+## 旧版本说明（v0.3.0 桌面端）
+
+> 以下内容保留作为参考，对应 `legacy/` 中的代码，不再维护。
 
 Mac 平台的实时面试辅助工具：麦克风采集语音 → 火山引擎流式 ASR 实时转写 → 识别问题进入队列 → 手动挑题发给 LLM → 三段结构化答案并行流式显示。
 
