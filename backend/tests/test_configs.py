@@ -1,5 +1,10 @@
 """Tests for configs cache + admin /api/admin/configs."""
+import asyncio
+
+import pytest
+
 from app import configs
+from app import configs as configs_module
 from app.auth.security import hash_password, make_admin_token, make_user_token
 from app.models.admin import Admin
 from app.models.config_kv import ConfigKV
@@ -120,3 +125,140 @@ def test_put_config_supports_complex_json(client, db_session):
     assert r.status_code == 200
     assert r.json()["value"] == payload
     assert configs.get("llm.providers") == payload
+
+
+# ---------------- watcher (_refresh_loop / start_watcher / stop_watcher) ----------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_watcher():
+    """每个测试前后把 module 级 _watcher_task 重置 / cancel 清理。"""
+    configs_module._watcher_task = None
+    yield
+    task = configs_module._watcher_task
+    if task is not None:
+        task.cancel()
+        configs_module._watcher_task = None
+
+
+@pytest.mark.asyncio
+async def test_watcher_picks_up_external_change(db_session, monkeypatch):
+    """Watcher 应该重新读 DB，包括别处直接 INSERT/UPDATE 的 row。"""
+    # seed 一个 key
+    db_session.add(ConfigKV(key="watcher.key", value="v1"))
+    db_session.commit()
+    configs_module.init_cache(db_session)
+    assert configs_module.get("watcher.key") == "v1"
+
+    # 模拟 DBA 直接改 DB（绕过 save，所以 _cache 没更新）
+    row = db_session.query(ConfigKV).filter_by(key="watcher.key").one()
+    row.value = "v2"
+    db_session.commit()
+    assert configs_module.get("watcher.key") == "v1"  # 缓存还是旧的
+
+    # 让 _refresh_loop 用 db_session 的同一个 engine
+    bind = db_session.get_bind()
+    from sqlalchemy.orm import sessionmaker
+    TestSession = sessionmaker(bind=bind, autoflush=False, autocommit=False)
+    monkeypatch.setattr("app.configs.SessionLocal", TestSession)
+
+    # 让 sleep：第一次直接返回（让 loop 跑一圈 refresh body），第二次 raise CancelledError
+    sleep_count = {"n": 0}
+
+    async def fast_sleep(seconds):
+        sleep_count["n"] += 1
+        if sleep_count["n"] > 1:
+            raise asyncio.CancelledError()
+        # 第一次直接返回，让循环执行 refresh body
+
+    monkeypatch.setattr("app.configs.asyncio.sleep", fast_sleep)
+
+    try:
+        await configs_module._refresh_loop(interval_seconds=1)
+    except asyncio.CancelledError:
+        pass
+
+    # 现在缓存应当是 v2
+    assert configs_module.get("watcher.key") == "v2"
+
+
+@pytest.mark.asyncio
+async def test_watcher_recovers_from_db_error(monkeypatch):
+    """DB 一次失败不应停止 loop，下次还要重试。"""
+    call_count = {"n": 0}
+
+    class FakeSession:
+        def query(self, *a, **kw):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("simulated DB hiccup")
+
+            class FakeQuery:
+                def all(self_inner):
+                    return []
+
+            return FakeQuery()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.configs.SessionLocal", FakeSession)
+
+    sleep_count = {"n": 0}
+
+    async def fast_sleep(s):
+        sleep_count["n"] += 1
+        if sleep_count["n"] > 2:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr("app.configs.asyncio.sleep", fast_sleep)
+
+    try:
+        await configs_module._refresh_loop(interval_seconds=1)
+    except asyncio.CancelledError:
+        pass
+
+    # 第二次 query 成功了，没抛上层 → loop 没死
+    assert call_count["n"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_start_watcher_returns_running_task(monkeypatch):
+    """start_watcher 应该返回 alive 的 task；stop_watcher 后退出。"""
+    real_sleep = asyncio.sleep
+
+    async def slow_sleep(s):
+        await real_sleep(0.05)
+
+    monkeypatch.setattr("app.configs.asyncio.sleep", slow_sleep)
+
+    # 让 SessionLocal 返回 empty 结果（不写 DB）
+    class FakeSession:
+        def query(self, *a, **kw):
+            class FakeQuery:
+                def all(self_inner):
+                    return []
+
+            return FakeQuery()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.configs.SessionLocal", FakeSession)
+
+    loop = asyncio.get_running_loop()
+    task = configs_module.start_watcher(loop, interval_seconds=1)
+    assert not task.done()
+
+    await asyncio.sleep(0.1)
+    assert not task.done()  # 还在跑
+
+    await configs_module.stop_watcher()
+    assert task.done()
+
+
+@pytest.mark.asyncio
+async def test_stop_watcher_idempotent():
+    """stop_watcher 没有 task 时不抛。"""
+    configs_module._watcher_task = None
+    await configs_module.stop_watcher()  # 不抛即通过
