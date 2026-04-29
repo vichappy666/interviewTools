@@ -27,8 +27,8 @@ function logout(): void {
           <el-icon><i class="el-icon-user" /></el-icon>
           <template #title>用户管理</template>
         </el-menu-item>
-        <el-menu-item index="/recharge" disabled>
-          <template #title>充值订单（M3）</template>
+        <el-menu-item index="/recharge">
+          <template #title>充值订单</template>
         </el-menu-item>
         <el-menu-item index="/configs">
           <template #title>系统配置</template>

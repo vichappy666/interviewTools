@@ -25,6 +25,11 @@ const routes = [
     props: (route: RouteLocationNormalized) => ({ id: Number(route.params.id) }),
   },
   {
+    path: '/recharge',
+    name: 'recharge-orders',
+    component: () => import('@/views/RechargeOrders.vue'),
+  },
+  {
     path: '/configs',
     name: 'configs',
     component: () => import('@/views/Configs.vue'),
