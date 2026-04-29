@@ -584,10 +584,9 @@ async def test_run_ask_streams_and_writes_back(
     from app import configs as configs_module
 
     monkeypatch.setitem(
-        configs_module._cache,
-        "llm",
-        {"providers": [{"name": "deepseek"}], "default": "deepseek"},
+        configs_module._cache, "llm.providers", [{"name": "deepseek"}]
     )
+    monkeypatch.setitem(configs_module._cache, "llm.default", "deepseek")
 
     await ws_module._run_ask(fake_mgr, sess.id, qa.id, qa.question)
 

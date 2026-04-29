@@ -39,10 +39,10 @@ class StateSnapshot:
     """最新未 finalize 的 partial 文本（覆盖式更新）。"""
 
     questions: list[dict] = field(default_factory=list)
-    """检测到的面试问题列表，每条 ``{"id": int, "text": str, "asked_at": float}``。"""
+    """检测到的面试问题列表，每条 ``{"qa_id": int, "text": str, "asked_at": float}``。"""
 
     current_answer: Optional[dict] = None
-    """当前 LLM 回答的累积内容 ``{"qa_id": int, "key_points": str, "script": str, "full": str}``，未生成时为 None。"""
+    """当前 LLM 回答 ``{"qa_id": int, "sections": {"key_points": {"text": str, "state": "streaming"|"done"}, ...}}``。"""
 
 
 # ---------------- SessionRuntime ----------------
@@ -255,7 +255,7 @@ class SessionManager:
             return
         async with runtime._lock:
             runtime.state_snapshot.questions.append(
-                {"id": qa_id, "text": text, "asked_at": asked_at}
+                {"qa_id": qa_id, "text": text, "asked_at": asked_at}
             )
 
     async def update_answer_chunk(
@@ -281,14 +281,32 @@ class SessionManager:
         async with runtime._lock:
             ans = runtime.state_snapshot.current_answer
             if ans is None or ans.get("qa_id") != qa_id:
-                ans = {
-                    "qa_id": qa_id,
-                    "key_points": "",
-                    "script": "",
-                    "full": "",
-                }
+                ans = {"qa_id": qa_id, "sections": {}}
                 runtime.state_snapshot.current_answer = ans
-            ans[segment] = ans.get(segment, "") + text
+            sections = ans.setdefault("sections", {})
+            seg = sections.setdefault(segment, {"text": "", "state": "streaming"})
+            seg["text"] = seg.get("text", "") + text
+            seg["state"] = "streaming"
+
+    async def mark_answer_segment_done(
+        self,
+        session_id: int,
+        qa_id: int,
+        segment: str,
+    ) -> None:
+        """某一段流式结束，标 state='done'（snapshot 用）。"""
+        if segment not in ("key_points", "script", "full"):
+            raise ValueError(f"invalid answer segment: {segment!r}")
+        runtime = self.sessions.get(session_id)
+        if runtime is None:
+            return
+        async with runtime._lock:
+            ans = runtime.state_snapshot.current_answer
+            if ans is None or ans.get("qa_id") != qa_id:
+                return
+            sections = ans.setdefault("sections", {})
+            seg = sections.setdefault(segment, {"text": "", "state": "done"})
+            seg["state"] = "done"
 
     async def finalize_answer(self, session_id: int) -> None:
         """一轮 QA 回答完成，把 current_answer 清回 None。"""

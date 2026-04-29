@@ -273,8 +273,12 @@ async def _run_ask(
     question: str,
 ) -> None:
     """跑 LLM 三段流并 broadcast 每个事件；结束时回填 ``session_qa.answer_*``。"""
-    cfg = configs_module.get("llm", {})
-    if not isinstance(cfg, dict) or not cfg.get("providers"):
+    # configs 库里 llm.providers / llm.default 是两条独立行，没有 llm 父 key
+    cfg = {
+        "providers": configs_module.get("llm.providers", []),
+        "default": configs_module.get("llm.default", ""),
+    }
+    if not cfg["providers"] or not cfg["default"]:
         await manager.broadcast(
             session_id,
             {
@@ -330,6 +334,7 @@ async def _run_ask(
                     },
                 )
             elif ev.type == "end":
+                await manager.mark_answer_segment_done(session_id, qa_id, ev.name)
                 await manager.broadcast(
                     session_id,
                     {

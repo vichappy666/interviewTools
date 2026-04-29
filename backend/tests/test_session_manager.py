@@ -328,8 +328,8 @@ async def test_append_question(started_at):
     await manager.append_question(1, qa_id=12, text="为什么离职", asked_at=42.5)
     qs = manager.get(1).state_snapshot.questions
     assert qs == [
-        {"id": 11, "text": "自我介绍一下", "asked_at": 10.0},
-        {"id": 12, "text": "为什么离职", "asked_at": 42.5},
+        {"qa_id": 11, "text": "自我介绍一下", "asked_at": 10.0},
+        {"qa_id": 12, "text": "为什么离职", "asked_at": 42.5},
     ]
 
 
@@ -345,9 +345,11 @@ async def test_update_answer_chunk_appends_per_segment(started_at):
     ans = manager.get(1).state_snapshot.current_answer
     assert ans == {
         "qa_id": 11,
-        "key_points": "• 要点1\n• 要点2",
-        "script": "您好，我的看法是...",
-        "full": "完整段落。",
+        "sections": {
+            "key_points": {"text": "• 要点1\n• 要点2", "state": "streaming"},
+            "script": {"text": "您好，我的看法是...", "state": "streaming"},
+            "full": {"text": "完整段落。", "state": "streaming"},
+        },
     }
 
 
@@ -360,9 +362,9 @@ async def test_update_answer_chunk_resets_on_new_qa_id(started_at):
     ans = manager.get(1).state_snapshot.current_answer
     assert ans == {
         "qa_id": 12,
-        "key_points": "",
-        "script": "",
-        "full": "新回答开头",
+        "sections": {
+            "full": {"text": "新回答开头", "state": "streaming"},
+        },
     }
 
 
