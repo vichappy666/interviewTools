@@ -56,7 +56,6 @@ def upgrade() -> None:
             sa.DateTime(timezone=False),
             nullable=False,
             server_default=sa.func.now(),
-            server_onupdate=sa.func.now(),
         ),
         sa.Column("succeeded_at", sa.DateTime(timezone=False), nullable=True),
         sa.UniqueConstraint("tx_hash", name="uq_recharge_orders_tx_hash"),
