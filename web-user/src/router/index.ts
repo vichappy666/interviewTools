@@ -42,6 +42,11 @@ const routes = [
     component: () => import('@/views/Session.vue'),
   },
   {
+    path: '/recharge',
+    name: 'recharge',
+    component: () => import('@/views/Recharge.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },

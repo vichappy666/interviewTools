@@ -72,7 +72,7 @@ function onCancel(): void {
 }
 
 function recharge(): void {
-  alert('充值功能将在 M3 上线，敬请期待。')
+  router.push('/recharge')
 }
 
 function formatBalance(seconds: number): string {
@@ -127,7 +127,7 @@ onMounted(() => {
     <section class="actions">
       <button class="action" @click="recharge">
         🪙 充值
-        <span>买面试时间（M3 上线）</span>
+        <span>USDT-TRC20 买面试时间</span>
       </button>
       <button class="action" @click="router.push('/ledger')">
         📜 余额流水
