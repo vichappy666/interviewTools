@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { stopSession as stopSessionApi } from '@/api/sessions'
 import MarkdownPanel from '@/components/MarkdownPanel.vue'
 import { useAudioCapture } from '@/composables/useAudioCapture'
 import { useSessionStore, type AnswerSegment } from '@/stores/session'
@@ -187,6 +188,8 @@ function dispatchMessage(msg: WsIncoming): void {
       sessionStore.sessionEnded = true
       sessionStore.endReason = msg.reason
       cleanup()
+      // 1.5s 后自动跳首页（让用户看清结束原因）
+      window.setTimeout(() => router.push('/'), 1500)
       break
     case 'balance_update':
       sessionStore.balanceSeconds = msg.balance_seconds
@@ -245,11 +248,21 @@ function sendManual(): void {
   manualText.value = ''
 }
 
-function stopSession(): void {
+async function stopSession(): Promise<void> {
   if (!confirm('确认结束本次面试？')) return
+  // 优先走 WS（让其他 join 的设备也收到 session_ended 广播）
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'stop' }))
+  } else {
+    // WS 已断开：走 REST 兜底
+    try {
+      await stopSessionApi(Number(route.params.id))
+    } catch {
+      // 忽略：可能 session 已经 ended
+    }
   }
+  cleanup()
+  router.push('/')
 }
 
 function copySegment(seg: AnswerSegment): void {
