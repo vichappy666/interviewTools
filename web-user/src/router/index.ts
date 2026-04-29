@@ -37,6 +37,11 @@ const routes = [
     component: () => import('@/views/Ledger.vue'),
   },
   {
+    path: '/session/:id',
+    name: 'session',
+    component: () => import('@/views/Session.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },
