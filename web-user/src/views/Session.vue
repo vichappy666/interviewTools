@@ -352,6 +352,9 @@ onBeforeUnmount(() => {
           <p v-for="(f, i) in sessionStore.transcriptFinals" :key="i" class="final-line">
             {{ f.text }}
           </p>
+          <p v-if="sessionStore.transcriptPartial" class="partial-line">
+            {{ sessionStore.transcriptPartial }}
+          </p>
         </div>
       </section>
 
@@ -579,6 +582,10 @@ onBeforeUnmount(() => {
 }
 .transcript-box .final-line {
   margin: 0 0 4px 0;
+}
+.transcript-box .partial-line {
+  margin: 0 0 4px 0;
+  color: var(--text);
 }
 .questions-box {
   font-size: 13px;
