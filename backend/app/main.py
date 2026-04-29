@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.config import settings
+from app.users.router import router as users_router
 
 app = FastAPI(title="Interview Backend", version="0.1.0")
 
@@ -22,3 +23,4 @@ def health():
 
 
 app.include_router(auth_router)
+app.include_router(users_router)
