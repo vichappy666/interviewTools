@@ -10,6 +10,7 @@ import {
   listSessions,
   type SessionRow,
 } from '@/api/sessions'
+import { extractError } from '@/api/client'
 
 const store = useUserStore()
 const router = useRouter()
@@ -20,13 +21,6 @@ const activeStartedAt = ref<string>('')
 const recentSessions = ref<SessionRow[]>([])
 const loadingRecent = ref(false)
 const error = ref<string | null>(null)
-
-function describeStartError(e: any): string {
-  const code = e?.response?.data?.error?.code ?? e?.response?.data?.detail?.error?.code
-  if (code === 'INSUFFICIENT_BALANCE') return '余额不足，请先充值'
-  if (code === 'SESSION_LIMIT') return '已达最大并发会话数（请先结束其他会话）'
-  return '启动失败：' + (e?.message || '未知错误')
-}
 
 async function startInterview(): Promise<void> {
   error.value = null
@@ -44,7 +38,7 @@ async function startInterview(): Promise<void> {
     const r = await apiStart()
     router.push(`/session/${r.session_id}`)
   } catch (e: any) {
-    error.value = describeStartError(e)
+    error.value = extractError(e).message
   }
 }
 
@@ -62,7 +56,7 @@ async function onNew(): Promise<void> {
     const r = await apiStart()
     router.push(`/session/${r.session_id}`)
   } catch (e: any) {
-    error.value = describeStartError(e)
+    error.value = extractError(e).message
   }
 }
 
@@ -154,7 +148,7 @@ onMounted(() => {
     <section class="recent">
       <h2>最近面试</h2>
       <p v-if="loadingRecent" class="empty">加载中...</p>
-      <p v-else-if="recentSessions.length === 0" class="empty">暂无</p>
+      <p v-else-if="recentSessions.length === 0" class="empty">还没开始过面试，点上面"开始面试"试试吧。</p>
       <ul v-else class="recent-list">
         <li
           v-for="s in recentSessions"

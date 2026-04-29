@@ -17,6 +17,18 @@ const loading = ref(false)
 async function submit(): Promise<void> {
   if (loading.value) return
   error.value = ''
+  if (username.value.trim().length < 3) {
+    error.value = '用户名至少 3 个字符'
+    return
+  }
+  if (password.value.length < 8) {
+    error.value = '密码至少 8 位'
+    return
+  }
+  if (!/[a-zA-Z]/.test(password.value) || !/\d/.test(password.value)) {
+    error.value = '密码需要包含字母和数字'
+    return
+  }
   loading.value = true
   try {
     const payload: { username: string; password: string; phone?: string } = {

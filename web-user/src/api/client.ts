@@ -1,4 +1,5 @@
 import axios, { AxiosError, type AxiosResponse } from 'axios'
+import { describeError } from './errorMap'
 
 const TOKEN_KEY = 'auth_token'
 
@@ -49,7 +50,13 @@ export function extractError(err: unknown): ApiError {
   // Best-effort extract our backend's {detail: {error: {code, message}}}
   const ax = err as AxiosError<{ detail?: { error?: ApiError } } | { error?: ApiError }>
   const data = ax?.response?.data as any
-  if (data?.detail?.error) return data.detail.error as ApiError
-  if (data?.error) return data.error as ApiError
-  return { code: 'UNKNOWN', message: ax?.message || '请求失败' }
+  let raw: ApiError
+  if (data?.detail?.error) raw = data.detail.error as ApiError
+  else if (data?.error) raw = data.error as ApiError
+  else raw = { code: 'UNKNOWN', message: ax?.message || '请求失败' }
+  // 后端没给 message 或 message 看起来不是给人看的（== code），用 errorMap 兜底
+  if (!raw.message || raw.message === raw.code) {
+    raw.message = describeError(raw.code, raw.message)
+  }
+  return raw
 }

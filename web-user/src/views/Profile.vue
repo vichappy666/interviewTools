@@ -43,6 +43,10 @@ async function savePhone(): Promise<void> {
 async function savePassword(): Promise<void> {
   passMsg.value = ''
   passErr.value = ''
+  if (newPass.value.length < 8 || !/[a-zA-Z]/.test(newPass.value) || !/\d/.test(newPass.value)) {
+    passErr.value = '新密码至少 8 位且需要包含字母和数字'
+    return
+  }
   passLoading.value = true
   try {
     await changePassword({ old_password: oldPass.value, new_password: newPass.value })
