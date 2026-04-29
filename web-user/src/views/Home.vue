@@ -107,6 +107,8 @@ async function loadRecent(): Promise<void> {
 }
 
 onMounted(() => {
+  // 刷新余额（从面试页 router.push('/') 回来时拿到结束扣费后的最新值）
+  void store.fetchMe().catch(() => {})
   loadRecent()
 })
 </script>
