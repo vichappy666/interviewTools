@@ -5,17 +5,11 @@ from sqlalchemy.orm import Session
 from app.auth import service, throttle
 from app.auth.security import make_user_token
 from app.deps import get_db
+from app.http_utils import client_ip as _client_ip
 from app.schemas.auth import AuthOut, LoginIn, RegisterIn, ResetPasswordIn, UserOut
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 @router.post("/register", response_model=AuthOut)

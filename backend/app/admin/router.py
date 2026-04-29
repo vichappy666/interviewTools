@@ -8,6 +8,7 @@ from app.audit import write as audit_write
 from app.auth.security import hash_password
 from app.billing.ledger import grant as billing_grant
 from app.deps import get_current_admin, get_db
+from app.http_utils import client_ip as _client_ip
 from app.models.admin import Admin
 from app.models.balance_ledger import BalanceLedger
 from app.models.config_kv import ConfigKV
@@ -28,13 +29,6 @@ from app.schemas.config import ConfigItemOut, ConfigPutIn
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 # ---------------- auth/login ----------------

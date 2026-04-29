@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import write as audit_write
 from app.deps import get_current_admin, get_db
+from app.http_utils import client_ip as _client_ip
 from app.models.admin import Admin
 from app.models.recharge_order import RechargeOrder
 from app.models.user import User
@@ -39,13 +40,6 @@ router = APIRouter(prefix="/api/admin/recharge", tags=["admin-recharge"])
 
 _FORCE_SUCCESS_ALLOWED = {"pending", "submitted", "verifying", "failed", "expired"}
 _FORCE_FAIL_ALLOWED = {"pending", "submitted", "verifying"}
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 def _order_to_dict(order: RechargeOrder, username: str | None) -> dict:
@@ -148,6 +142,7 @@ async def force_success(
         )
 
     note = body.note
+    old_status = order.status
     granted_seconds = int(Decimal(order.amount_usdt) * order.rate_per_usdt)
 
     # 同事务：credit + 改 order + audit
@@ -171,7 +166,18 @@ async def force_success(
         action="force_recharge_success",
         target_type="recharge_order",
         target_id=order.id,
-        payload={"granted_seconds": granted_seconds, "note": note},
+        payload={
+            "old_status": old_status,
+            "user_id": order.user_id,
+            "amount_usdt": str(order.amount_usdt),
+            "tx_amount_usdt": (
+                str(order.tx_amount_usdt) if order.tx_amount_usdt is not None else None
+            ),
+            "rate_per_usdt": order.rate_per_usdt,
+            "granted_seconds": granted_seconds,
+            "tx_hash": order.tx_hash,
+            "note": note,
+        },
         ip=_client_ip(request),
         note=note,
     )
@@ -211,6 +217,8 @@ def force_fail(
         )
 
     note = body.note
+    old_status = order.status
+    old_tx_hash = order.tx_hash
     order.status = "failed"
     order.fail_reason = f"admin force: {note}"
 
@@ -220,7 +228,12 @@ def force_fail(
         action="force_recharge_fail",
         target_type="recharge_order",
         target_id=order.id,
-        payload={"note": note},
+        payload={
+            "old_status": old_status,
+            "user_id": order.user_id,
+            "tx_hash": old_tx_hash,
+            "note": note,
+        },
         ip=_client_ip(request),
         note=note,
     )
@@ -252,6 +265,8 @@ def retry_order(
             },
         )
 
+    old_tx_hash = order.tx_hash
+    old_fail_reason = order.fail_reason
     order.status = "pending"
     order.fail_reason = None
     order.tx_hash = None  # 清掉避免 UNIQUE 卡住
@@ -262,7 +277,11 @@ def retry_order(
         action="retry_recharge_order",
         target_type="recharge_order",
         target_id=order.id,
-        payload={},
+        payload={
+            "user_id": order.user_id,
+            "old_tx_hash": old_tx_hash,
+            "old_fail_reason": old_fail_reason,
+        },
         ip=_client_ip(request),
     )
     db.commit()
