@@ -335,11 +335,12 @@ def test_submit_amount_floor(client, db_session, fake_tron, monkeypatch):
 # ---------------- 11. RPC error → 503 ----------------
 
 def test_submit_rpc_error(client, db_session, fake_tron, monkeypatch):
+    """网络错（ConnectError / RequestError）→ 503 TRON_RPC_ERROR。"""
     u = _make_user(db_session)
     o = _create_pending_order(client, u.id, amount="50")
 
     def boom(*a, **kw):
-        raise httpx.ConnectError("boom")  # subclass of HTTPError
+        raise httpx.ConnectError("boom")
     _set_verify(monkeypatch, boom)
 
     r = client.post(
@@ -354,6 +355,87 @@ def test_submit_rpc_error(client, db_session, fake_tron, monkeypatch):
     order = db_session.get(RechargeOrder, o["id"])
     assert order.status == "failed"
     assert "RPC" in (order.fail_reason or "") or "boom" in (order.fail_reason or "")
+
+
+def test_submit_rpc_5xx_status_error(client, db_session, fake_tron, monkeypatch):
+    """TronGrid 返回 502 → 503 TRON_RPC_ERROR（视作可重试）。"""
+    u = _make_user(db_session)
+    o = _create_pending_order(client, u.id, amount="50")
+
+    def boom_502(*a, **kw):
+        req = httpx.Request("POST", "https://api.shasta.trongrid.io/x")
+        resp = httpx.Response(502, request=req)
+        raise httpx.HTTPStatusError("upstream", request=req, response=resp)
+    _set_verify(monkeypatch, boom_502)
+
+    r = client.post(
+        f"/api/recharge/orders/{o['id']}/submit",
+        headers=_auth_headers(u.id),
+        json={"tx_hash": HASH_A},
+    )
+    assert r.status_code == 503
+    assert r.json()["detail"]["error"]["code"] == "TRON_RPC_ERROR"
+    db_session.expire_all()
+    assert db_session.get(RechargeOrder, o["id"]).status == "failed"
+
+
+def test_submit_rpc_4xx_status_error(client, db_session, fake_tron, monkeypatch):
+    """TronGrid 返回 400 → 500 TRON_RPC_BAD_REQUEST（多半是配置/请求构造问题）。"""
+    u = _make_user(db_session)
+    o = _create_pending_order(client, u.id, amount="50")
+
+    def boom_400(*a, **kw):
+        req = httpx.Request("POST", "https://api.shasta.trongrid.io/x")
+        resp = httpx.Response(400, request=req)
+        raise httpx.HTTPStatusError("bad request", request=req, response=resp)
+    _set_verify(monkeypatch, boom_400)
+
+    r = client.post(
+        f"/api/recharge/orders/{o['id']}/submit",
+        headers=_auth_headers(u.id),
+        json={"tx_hash": HASH_A},
+    )
+    assert r.status_code == 500
+    assert r.json()["detail"]["error"]["code"] == "TRON_RPC_BAD_REQUEST"
+    db_session.expire_all()
+    order = db_session.get(RechargeOrder, o["id"])
+    assert order.status == "failed"
+    assert "400" in (order.fail_reason or "")
+
+
+def test_submit_credit_failure_marks_order_failed(
+    client, db_session, fake_tron, monkeypatch
+):
+    """verify_tx 通过但 credit_recharge 抛异常 → 订单不能停在 verifying，
+    必须被回滚到 failed，避免用户看到永久卡住的中间态。"""
+    u = _make_user(db_session, balance=100)
+    o = _create_pending_order(client, u.id, amount="50")
+
+    def ok(*a, **kw):
+        return VerifyResult(True, "OK", "", Decimal("50"))
+    _set_verify(monkeypatch, ok)
+
+    def boom_credit(*a, **kw):
+        raise RuntimeError("simulated credit failure")
+    monkeypatch.setattr(router_mod, "credit_recharge", boom_credit)
+
+    r = client.post(
+        f"/api/recharge/orders/{o['id']}/submit",
+        headers=_auth_headers(u.id),
+        json={"tx_hash": HASH_A},
+    )
+    assert r.status_code == 500
+    assert r.json()["detail"]["error"]["code"] == "RECHARGE_INTERNAL_ERROR"
+
+    db_session.expire_all()
+    order = db_session.get(RechargeOrder, o["id"])
+    assert order.status == "failed"
+    assert "simulated credit failure" in (order.fail_reason or "")
+    # 余额不变（未入账）
+    user = db_session.get(User, u.id)
+    assert user.balance_seconds == 100
+    # 也没有 ledger 行
+    assert db_session.query(BalanceLedger).filter_by(user_id=u.id).count() == 0
 
 
 # ---------------- 12. broadcast hook ----------------

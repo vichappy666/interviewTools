@@ -294,9 +294,12 @@ async def submit_order_hash(
                 min_amount_usdt=Decimal(order.amount_usdt),
                 expires_at=order.expires_at,
             )
-        except (httpx.HTTPError, httpx.RequestError) as e:
+        except httpx.RequestError as e:
+            # 网络层（连接 / 超时 / DNS）→ 503 + TRON_RPC_ERROR
+            db.rollback()
+            db.refresh(order)
             order.status = "failed"
-            order.fail_reason = f"链上 RPC 失败: {repr(e)[:200]}"
+            order.fail_reason = f"链上 RPC 网络故障: {repr(e)[:200]}"
             db.commit()
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -304,6 +307,33 @@ async def submit_order_hash(
                     "error": {
                         "code": "TRON_RPC_ERROR",
                         "message": "链上节点暂时不可用，请稍后再试",
+                    }
+                },
+            )
+        except httpx.HTTPStatusError as e:
+            # TronGrid 返回 4xx/5xx：429/5xx 视作可重试 503，其他 4xx 视作 500（多半节点配置/请求构造问题）
+            db.rollback()
+            db.refresh(order)
+            order.status = "failed"
+            sc = e.response.status_code
+            order.fail_reason = f"链上 RPC HTTP {sc}: {repr(e)[:200]}"
+            db.commit()
+            if sc == 429 or sc >= 500:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "error": {
+                            "code": "TRON_RPC_ERROR",
+                            "message": "链上节点暂时不可用，请稍后再试",
+                        }
+                    },
+                )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": {
+                        "code": "TRON_RPC_BAD_REQUEST",
+                        "message": f"链上请求被拒绝（HTTP {sc}），请联系管理员",
                     }
                 },
             )
@@ -322,20 +352,41 @@ async def submit_order_hash(
             },
         )
 
-    # 成功：同事务内 credit + 改 order
-    granted_seconds = int(Decimal(result.tx_amount_usdt) * order.rate_per_usdt)
-    new_balance = credit_recharge(
-        db,
-        user_id=current.id,
-        delta_seconds=granted_seconds,
-        order_id=order.id,
-    )
-    order.tx_amount_usdt = result.tx_amount_usdt
-    order.granted_seconds = granted_seconds
-    order.status = "succeeded"
-    order.succeeded_at = datetime.utcnow()
-    db.commit()
-    db.refresh(order)
+    # 9. 成功：同事务内 credit + 改 order；任何步骤异常都把订单回退到 failed 状态
+    try:
+        granted_seconds = int(Decimal(result.tx_amount_usdt) * order.rate_per_usdt)
+        new_balance = credit_recharge(
+            db,
+            user_id=current.id,
+            delta_seconds=granted_seconds,
+            order_id=order.id,
+        )
+        order.tx_amount_usdt = result.tx_amount_usdt
+        order.granted_seconds = granted_seconds
+        order.status = "succeeded"
+        order.succeeded_at = datetime.utcnow()
+        db.commit()
+        db.refresh(order)
+    except Exception as e:  # noqa: BLE001
+        # 兜底：保证订单不会停留在 'verifying'，避免用户看到永久卡住的中间态
+        logger.exception("recharge credit/commit failed for order %s", order.id)
+        db.rollback()
+        try:
+            db.refresh(order)
+            order.status = "failed"
+            order.fail_reason = f"内部错误: {repr(e)[:200]}"
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": {
+                    "code": "RECHARGE_INTERNAL_ERROR",
+                    "message": "充值入账失败，请联系管理员",
+                }
+            },
+        )
 
     # broadcast balance_update（失败不影响主流程）
     try:
