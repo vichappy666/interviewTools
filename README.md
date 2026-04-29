@@ -171,6 +171,9 @@ cd web-user && npm run build
 cd web-admin && npm run build
 ```
 
+每次 push / PR 由 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 自动跑：
+backend pytest + web-user/web-admin `npm run build` 三个并行 job。
+
 ---
 
 ## 部署到 VPS
@@ -204,7 +207,8 @@ git checkout v0.3.0-web-layout
 | `v0.4.0-m2` | ✅ | 面试核心：ASR async + LLM 三段并行流 + WebSocket + 扣费 meter |
 | `v0.4.0-m3` | ✅ | TRC20 充值（D 方案，含 base58check 手写 + 7 项链上校验） |
 | `v1.0.0` | ✅ | 历史回看 + 体验打磨 + README（**第一版正式 release**） |
-| `v1.1.0` | 🚧 | 首次可上线版（VPS 部署文档 + systemd + Caddy 产物） |
+| `v1.1.0` | ✅ | 首次可上线版（VPS 部署文档 + systemd + Caddy 产物） |
+| `v1.2.0` | 🚧 | CI workflow（pytest + 双前端 build，push/PR 自动跑） |
 
 ---
 
