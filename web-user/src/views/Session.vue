@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { stopSession as stopSessionApi } from '@/api/sessions'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MarkdownPanel from '@/components/MarkdownPanel.vue'
 import { useAudioCapture } from '@/composables/useAudioCapture'
 import { useSessionStore, type AnswerSegment } from '@/stores/session'
@@ -248,8 +249,14 @@ function sendManual(): void {
   manualText.value = ''
 }
 
-async function stopSession(): Promise<void> {
-  if (!confirm('确认结束本次面试？')) return
+const confirmStopVisible = ref(false)
+
+function stopSession(): void {
+  confirmStopVisible.value = true
+}
+
+async function onConfirmStop(): Promise<void> {
+  confirmStopVisible.value = false
   // 优先走 WS（让其他 join 的设备也收到 session_ended 广播）
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'stop' }))
@@ -263,6 +270,10 @@ async function stopSession(): Promise<void> {
   }
   cleanup()
   router.push('/')
+}
+
+function onCancelStop(): void {
+  confirmStopVisible.value = false
 }
 
 function copySegment(seg: AnswerSegment): void {
@@ -447,6 +458,18 @@ onBeforeUnmount(() => {
         <button class="primary" @click="router.push('/')">返回首页</button>
       </div>
     </div>
+
+    <!-- 自定义结束确认弹窗 -->
+    <ConfirmDialog
+      :visible="confirmStopVisible"
+      title="结束本次面试？"
+      message="结束后将无法继续提问，已扣除的时长会写入余额流水。"
+      confirm-text="结束面试"
+      cancel-text="再聊聊"
+      tone="danger"
+      @confirm="onConfirmStop"
+      @cancel="onCancelStop"
+    />
   </div>
 </template>
 
