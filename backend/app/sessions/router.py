@@ -19,6 +19,8 @@ from app.schemas.session import (
     SessionStartResponse,
 )
 from app.sessions.manager import manager as session_manager
+from app.sessions.meter import ensure_running as meter_ensure_running
+from app.sessions.meter import stop_for_user as meter_stop_for_user
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -27,7 +29,7 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 # ---------------- POST /start ----------------
 
 @router.post("/start", response_model=SessionStartResponse)
-def start_session(
+async def start_session(
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SessionStartResponse:
@@ -62,7 +64,8 @@ def start_session(
     db.commit()
     db.refresh(s)
 
-    # TODO(M2 T4): 通知 SessionManager 创建对应的内存会话
+    # 4. 启动扣费心跳 meter（M2 T9，幂等：该 user 已有 task 就 noop）
+    await meter_ensure_running(current.id)
 
     return SessionStartResponse(session_id=s.id, ws_url=f"/ws/session/{s.id}")
 
