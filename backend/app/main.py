@@ -11,6 +11,7 @@ from app.auth.router import router as auth_router
 from app.billing.router import router as billing_router
 from app.config import settings
 from app.db import SessionLocal
+from app.recharge.router import router as recharge_router
 from app.sessions.router import router as sessions_router
 from app.sessions.ws import ws_router
 from app.users.router import router as users_router
@@ -51,6 +52,7 @@ def health():
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(billing_router)
+app.include_router(recharge_router)
 app.include_router(sessions_router)
 app.include_router(ws_router)
 app.include_router(admin_router)
