@@ -208,7 +208,8 @@ git checkout v0.3.0-web-layout
 | `v0.4.0-m3` | ✅ | TRC20 充值（D 方案，含 base58check 手写 + 7 项链上校验） |
 | `v1.0.0` | ✅ | 历史回看 + 体验打磨 + README（**第一版正式 release**） |
 | `v1.1.0` | ✅ | 首次可上线版（VPS 部署文档 + systemd + Caddy 产物） |
-| `v1.2.0` | 🚧 | CI workflow（pytest + 双前端 build，push/PR 自动跑） |
+| `v1.2.0` | ✅ | CI workflow（pytest + 双前端 build，push/PR 自动跑） |
+| `v1.3.0` | 🚧 | 结构化日志（prod JSON）+ /api/health/db 探针 |
 
 ---
 

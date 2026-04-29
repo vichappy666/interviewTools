@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     trongrid_api_key: str = ""
     env: str = "local"
     cors_origins: str = "http://localhost:5173,http://localhost:5174"
+    log_level: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
