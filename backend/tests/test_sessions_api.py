@@ -251,3 +251,85 @@ def test_qa_forbidden(client, db_session):
     r = client.get(f"/api/sessions/{sid}/qa", headers=_auth_headers(b.id))
     assert r.status_code == 403
     assert r.json()["detail"]["error"]["code"] == "FORBIDDEN"
+
+
+def test_list_qa_returns_rows_in_order(client, db_session):
+    """已结束的 session，2 条 QA，按 asked_at ASC 返回。"""
+    from datetime import datetime, timedelta
+    from app.models.session_qa import SessionQA
+    from app.models.session import Session as SessionModel
+    from app.models.user import User
+    from app.auth.security import hash_password, make_user_token
+
+    u = User(username="qa_alice", password_hash=hash_password("secret123"), balance_seconds=100)
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+
+    s = SessionModel(user_id=u.id, status="ended", total_seconds=60)
+    db_session.add(s)
+    db_session.commit()
+    db_session.refresh(s)
+
+    base = datetime.utcnow()
+    qa1 = SessionQA(
+        session_id=s.id, question="Q1",
+        answer_key_points="K1", answer_script="S1", answer_full="F1",
+        asked_at=base, finished_at=base + timedelta(seconds=2),
+        source="detected",
+    )
+    qa2 = SessionQA(
+        session_id=s.id, question="Q2",
+        answer_key_points="K2", answer_script="S2", answer_full="F2",
+        asked_at=base + timedelta(seconds=10), finished_at=base + timedelta(seconds=12),
+        source="manual",
+    )
+    db_session.add_all([qa1, qa2])
+    db_session.commit()
+
+    r = client.get(
+        f"/api/sessions/{s.id}/qa",
+        headers={"Authorization": f"Bearer {make_user_token(u.id)}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body) == 2
+    assert body[0]["question"] == "Q1"
+    assert body[0]["answer_key_points"] == "K1"
+    assert body[1]["question"] == "Q2"
+    assert body[1]["source"] == "manual"
+
+
+def test_list_qa_returns_unfinished_qa(client, db_session):
+    """answer_* 全是 None 的未完成 QA 也要返回。"""
+    from app.models.session_qa import SessionQA
+    from app.models.session import Session as SessionModel
+    from app.models.user import User
+    from app.auth.security import hash_password, make_user_token
+
+    u = User(username="qa_bob", password_hash=hash_password("secret123"), balance_seconds=100)
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+
+    s = SessionModel(user_id=u.id, status="active", total_seconds=0)
+    db_session.add(s)
+    db_session.commit()
+    db_session.refresh(s)
+
+    qa = SessionQA(
+        session_id=s.id, question="Q-pending",
+        answer_key_points=None, answer_script=None, answer_full=None,
+        finished_at=None, source="detected",
+    )
+    db_session.add(qa)
+    db_session.commit()
+
+    r = client.get(
+        f"/api/sessions/{s.id}/qa",
+        headers={"Authorization": f"Bearer {make_user_token(u.id)}"},
+    )
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.json()[0]["answer_key_points"] is None
+    assert r.json()[0]["finished_at"] is None

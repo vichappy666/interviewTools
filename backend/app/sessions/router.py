@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app import configs as configs_module
 from app.deps import get_current_user, get_db
 from app.models.session import Session as SessionModel
+from app.models.session_qa import SessionQA
 from app.models.user import User
 from app.schemas.session import (
     SessionListResponse,
@@ -172,5 +173,10 @@ def list_qa(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"error": {"code": "FORBIDDEN", "message": "无权操作该会话"}},
         )
-    # M2 T3 暂返空数组；M4 实现真实 QA 列表查询
-    return []
+    rows = (
+        db.query(SessionQA)
+        .filter(SessionQA.session_id == session_id)
+        .order_by(SessionQA.asked_at.asc(), SessionQA.id.asc())
+        .all()
+    )
+    return [SessionQARead.model_validate(r) for r in rows]
