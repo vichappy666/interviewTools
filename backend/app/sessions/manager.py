@@ -59,6 +59,8 @@ class SessionRuntime:
     """已 join 的 WebSocket 连接（fastapi.WebSocket，留 Any 以便 mock 测试）。"""
     asr_client: Optional[Any] = None
     """T5 才接入；T4 阶段保持 None。"""
+    asr_forward_task: Optional[asyncio.Task] = None
+    """T8 接入：把 asr_client.stream_results() 的事件转 broadcast 的会话级 task。"""
     meter_task: Optional[asyncio.Task] = None
     """T9 才接入；T4 阶段保持 None。"""
     state_snapshot: StateSnapshot = field(default_factory=StateSnapshot)
@@ -171,6 +173,13 @@ class SessionManager:
         # 1. 取消计费心跳任务
         if runtime.meter_task is not None and not runtime.meter_task.done():
             runtime.meter_task.cancel()
+
+        # 1b. 取消 ASR forward task（T8）
+        if (
+            runtime.asr_forward_task is not None
+            and not runtime.asr_forward_task.done()
+        ):
+            runtime.asr_forward_task.cancel()
 
         # 2. 关 asr 客户端（T5 之前都是 None；包 try/except 防 close 抛错）
         if runtime.asr_client is not None:
