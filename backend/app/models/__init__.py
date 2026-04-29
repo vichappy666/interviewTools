@@ -7,3 +7,4 @@ from app.models.admin_audit_log import AdminAuditLog  # noqa: F401
 from app.models.config_kv import ConfigKV  # noqa: F401
 from app.models.session import Session  # noqa: F401
 from app.models.session_qa import SessionQA  # noqa: F401
+from app.models.recharge_order import RechargeOrder  # noqa: F401
