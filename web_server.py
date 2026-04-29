@@ -188,7 +188,15 @@ class WebBridge(QObject):
         index = WEB_DIR / "index.html"
         if not index.exists():
             return web.Response(status=500, text="index.html missing")
-        return web.FileResponse(index)
+        # 禁用浏览器缓存：开发期改前端立即生效，避免用户看到旧版 UI
+        return web.FileResponse(
+            index,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     async def _ws_handler(self, request):
         ws = web.WebSocketResponse(heartbeat=25)
