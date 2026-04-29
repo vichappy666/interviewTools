@@ -20,7 +20,8 @@ from app.schemas.session import (
 )
 from app.sessions.manager import manager as session_manager
 from app.sessions.meter import ensure_running as meter_ensure_running
-from app.sessions.meter import stop_for_user as meter_stop_for_user
+from app.sessions.meter import flush_session_charge as meter_flush_session_charge
+from app.sessions.meter import stop_for_user as meter_stop_for_user  # noqa: F401
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -95,14 +96,18 @@ async def stop_session(
         await session_manager.stop(session_id, reason="user_stop")
         return SessionRead.model_validate(s)
 
+    # 1) 把累计 elapsed 一次性扣到 ledger（M2 改：每秒不写 ledger，结束时一笔）
+    elapsed = await meter_flush_session_charge(session_id, current.id)
+
+    # 2) 标 DB 行 ended
     s.status = "ended"
     s.ended_at = func.now()
     s.end_reason = "user_stop"
+    s.total_seconds = elapsed
     db.commit()
     db.refresh(s)
 
-    # 通知 SessionManager 停止对应的内存会话 + 关闭 WebSocket
-    # （T8 真实 ws handler 上线后会有连接需要被关；T4 阶段 manager 里通常没注册，stop 会 no-op）
+    # 3) 通知 SessionManager 关闭 ws / asr / 内存 runtime
     await session_manager.stop(session_id, reason="user_stop")
 
     return SessionRead.model_validate(s)

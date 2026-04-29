@@ -1,20 +1,18 @@
-"""扣费心跳 meter（M2 T9）。
+"""扣费心跳 meter（M2 T9，重构版：会话结束时一次性写 ledger）。
 
 设计：
 
-- **user-level task**：每个 user 在 active session 期间起 *一个* 后台 task，每秒
-  按当前 active session 数 N 扣 N 秒。多 session 并发时不会重复扣。
-- **幂等启动**：``ensure_running(user_id)`` 在每次 session start / ws accept 时调，
-  如果该 user 已有 task 在跑就 noop。
-- **自然退出**：task 内部检测到该 user 0 个 active session 时自己 return；外部也可
-  ``stop_for_user`` 强制 cancel 兜底。
-- **余额耗尽**：``grant`` 抛 INSUFFICIENT_BALANCE 时调
-  ``manager.stop_all_for_user(user_id, reason='balance_zero')`` + 退出。
-- **心跳广播**：跨 10 秒边界时推 ``balance_update``；余额 ≤60s 时每 5 秒推一次
-  ``balance_low``。
+- **用户级 task**：每个 user 在 active session 期间起 *一个* 后台 task，每秒
+  累加该 user 所有 active session 的 elapsed 秒数（in-memory），不写 DB。
+- **余额检查**：每 tick 用 ``users.balance_seconds - sum(已 elapsed)`` 判断剩余；
+  ≤ 0 → 调 ``manager.stop_all_for_user(user_id, reason='balance_zero')``。
+- **会话结束扣费**：``flush_session_charge(session_id, user_id)`` 在 session
+  stop（用户主动 / 余额耗尽 / admin 强停）时调，把累计 elapsed 写一条
+  ``balance_ledger`` 行 + 更新 ``users.balance_seconds``。
+- **心跳广播**：跨 10 秒边界推 ``balance_update``；余额 ≤60s 每 5 秒推 ``balance_low``。
+- **幂等启动**：``ensure_running(user_id)`` 重复调用 noop。
 
-模块级状态 ``_user_meter_tasks`` / ``_user_locks`` 在测试间会污染，测试用
-``_reset_for_tests()`` 清理。
+模块级状态在测试间会污染，测试用 ``_reset_for_tests()`` 清理。
 """
 from __future__ import annotations
 
@@ -26,6 +24,7 @@ from fastapi import HTTPException
 from app.billing.ledger import grant
 from app.db import SessionLocal
 from app.models.session import Session as SessionModel
+from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
@@ -34,23 +33,22 @@ logger = logging.getLogger(__name__)
 # ---------------- module state ----------------
 
 _user_meter_tasks: dict[int, asyncio.Task] = {}
-"""user_id → 该用户的 meter task。task done / 未注册即等于 'no meter running'。"""
+"""user_id → 该用户的 meter task。"""
+
+_session_elapsed: dict[int, int] = {}
+"""session_id → 已 elapsed 秒数（内存累计，结束时落地）。"""
 
 _user_locks: dict[int, asyncio.Lock] = {}
-"""user_id → 串行化扣费的锁（同 user 一秒内只一次扣）。"""
+"""user_id → 串行化每秒 tick 的锁。"""
 
 _locks_guard = asyncio.Lock()
-"""保护 _user_locks dict 的增删（避免并发 ensure 时双建锁）。"""
 
 
 # ---------------- public API ----------------
 
 
 async def ensure_running(user_id: int) -> None:
-    """启动该 user 的 meter task；如果已经在跑就 noop（幂等）。
-
-    在 session start endpoint 或 ws accept 后调用。
-    """
+    """启动该 user 的 meter task；幂等。"""
     task = _user_meter_tasks.get(user_id)
     if task is not None and not task.done():
         return
@@ -60,10 +58,7 @@ async def ensure_running(user_id: int) -> None:
 
 
 async def stop_for_user(user_id: int) -> None:
-    """主动停止该 user 的 meter task（兜底；正常情况下 task 自己检测 0 active 退出）。
-
-    幂等：没有 task 就 no-op。
-    """
+    """主动 cancel 该 user 的 meter task；幂等。"""
     task = _user_meter_tasks.pop(user_id, None)
     if task is None or task.done():
         return
@@ -76,23 +71,63 @@ async def stop_for_user(user_id: int) -> None:
         logger.debug("meter task for user %d raised on cancel", user_id)
 
 
-def _reset_for_tests() -> None:
-    """测试 fixture 用：cancel 所有 task 并清空所有模块级状态。
+def get_session_elapsed(session_id: int) -> int:
+    """读当前 session 的 in-memory elapsed 秒数（未结算）。"""
+    return _session_elapsed.get(session_id, 0)
 
-    本函数不 await cancel —— 测试如果需要等 task 结束自行 await。
+
+async def flush_session_charge(session_id: int, user_id: int) -> int:
+    """把 session 的累计 elapsed 一次性扣到 ledger，返回扣的秒数。
+
+    幂等：第二次调返回 0。
+    grant 失败（如余额已为 0）只 log，不抛 —— 防 user 主动 stop 时报 500。
     """
+    elapsed = _session_elapsed.pop(session_id, 0)
+    if elapsed <= 0:
+        return 0
+    db = SessionLocal()
+    try:
+        try:
+            grant(
+                db=db,
+                user_id=user_id,
+                delta_seconds=-elapsed,
+                reason="session",
+                ref_type="session",
+                ref_id=session_id,
+                note=f"session #{session_id} 累计 {elapsed}s",
+            )
+        except HTTPException as exc:
+            logger.warning(
+                "flush session %d charge=%ds for user %d failed: %s",
+                session_id,
+                elapsed,
+                user_id,
+                getattr(exc, "detail", exc),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "flush session %d charge=%ds crashed", session_id, elapsed
+            )
+    finally:
+        db.close()
+    return elapsed
+
+
+def _reset_for_tests() -> None:
+    """测试 fixture 用：cancel 所有 task 并清空所有模块级状态。"""
     for t in _user_meter_tasks.values():
         if not t.done():
             t.cancel()
     _user_meter_tasks.clear()
     _user_locks.clear()
+    _session_elapsed.clear()
 
 
 # ---------------- internal helpers ----------------
 
 
 async def _get_user_lock(user_id: int) -> asyncio.Lock:
-    """惰性建用户级 mutex。"""
     async with _locks_guard:
         lock = _user_locks.get(user_id)
         if lock is None:
@@ -101,33 +136,15 @@ async def _get_user_lock(user_id: int) -> asyncio.Lock:
         return lock
 
 
-def _is_insufficient_balance(exc: HTTPException) -> bool:
-    """检测 grant 抛的 HTTPException 是不是 INSUFFICIENT_BALANCE。"""
-    detail = getattr(exc, "detail", None)
-    if not isinstance(detail, dict):
-        return False
-    err = detail.get("error")
-    if not isinstance(err, dict):
-        return False
-    return err.get("code") == "INSUFFICIENT_BALANCE"
-
-
 # ---------------- meter task ----------------
 
 
 async def _run_meter(user_id: int) -> None:
-    """每秒扣一次 N 秒（N = 该 user 当前 active session 数）。
-
-    - 0 active → return（不扣，自然结束）
-    - INSUFFICIENT_BALANCE → 调 manager.stop_all_for_user 并 return
-    - 其他异常 → log + return（避免无限 loop 抛错日志洪水）
-    """
-    # lazy import 避免循环依赖
-    from app.sessions.manager import manager
+    """每秒：累加 elapsed → 检查余额 → 必要时 stop_all → 广播。"""
+    from app.sessions.manager import manager  # lazy import 避免循环
 
     last_broadcast_floor = -1
-    """上次 balance_update 广播时的 (balance // 10) 值；-1 让首轮一定推一次。"""
-    tick = 0  # 累计 tick 数，用于 balance_low 节流
+    tick = 0
 
     try:
         while True:
@@ -149,44 +166,54 @@ async def _run_meter(user_id: int) -> None:
                     )
                     n = len(active_sessions)
                     if n == 0:
-                        return  # user 已无 active session → 退出
+                        return
 
-                    ref_id = active_sessions[0].id
+                    # 内存累加每个 active session 的 elapsed
+                    for s in active_sessions:
+                        _session_elapsed[s.id] = (
+                            _session_elapsed.get(s.id, 0) + 1
+                        )
+
+                    user = (
+                        db.query(User).filter(User.id == user_id).one_or_none()
+                    )
+                    if user is None:
+                        logger.warning("user %d gone, stopping meter", user_id)
+                        return
+
+                    charged_so_far = sum(
+                        _session_elapsed.get(s.id, 0) for s in active_sessions
+                    )
+                    remaining = (user.balance_seconds or 0) - charged_so_far
                     session_ids = [s.id for s in active_sessions]
 
-                    try:
-                        new_balance = grant(
-                            db=db,
-                            user_id=user_id,
-                            delta_seconds=-n,
-                            reason="session",
-                            ref_type="session",
-                            ref_id=ref_id,
+                    if remaining <= 0:
+                        logger.info(
+                            "user %d balance exhausted (charged=%d, balance=%d), stopping all",
+                            user_id,
+                            charged_so_far,
+                            user.balance_seconds or 0,
                         )
-                    except HTTPException as exc:
-                        if _is_insufficient_balance(exc):
-                            logger.info(
-                                "user %d balance exhausted, stopping all sessions",
-                                user_id,
-                            )
+                        # flush 所有 active session 的累计扣费
+                        for s in active_sessions:
                             try:
-                                await manager.stop_all_for_user(
-                                    user_id, reason="balance_zero"
-                                )
+                                await flush_session_charge(s.id, user_id)
                             except Exception:  # noqa: BLE001
                                 logger.exception(
-                                    "stop_all_for_user failed user=%d", user_id
+                                    "flush_session_charge crashed sid=%d", s.id
                                 )
-                            return
-                        logger.warning(
-                            "grant raised non-balance HTTPException for user %d: %s",
-                            user_id,
-                            exc.detail,
-                        )
+                        try:
+                            await manager.stop_all_for_user(
+                                user_id, reason="balance_zero"
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "stop_all_for_user failed user=%d", user_id
+                            )
                         return
 
                     # 广播 balance_update：跨 10 秒边界时推一次（首轮强制推）
-                    cur_floor = new_balance // 10
+                    cur_floor = remaining // 10
                     if last_broadcast_floor < 0 or cur_floor != last_broadcast_floor:
                         last_broadcast_floor = cur_floor
                         for sid in session_ids:
@@ -194,18 +221,18 @@ async def _run_meter(user_id: int) -> None:
                                 sid,
                                 {
                                     "type": "balance_update",
-                                    "balance_seconds": new_balance,
+                                    "balance_seconds": remaining,
                                 },
                             )
 
                     # balance_low：余额 ≤60s 时每 5 秒推一次
-                    if 0 < new_balance <= 60 and tick % 5 == 0:
+                    if 0 < remaining <= 60 and tick % 5 == 0:
                         for sid in session_ids:
                             await manager.broadcast(
                                 sid,
                                 {
                                     "type": "balance_low",
-                                    "balance_seconds": new_balance,
+                                    "balance_seconds": remaining,
                                 },
                             )
                 finally:

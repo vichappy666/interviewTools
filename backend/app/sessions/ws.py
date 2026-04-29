@@ -198,7 +198,29 @@ async def _handle_text_message(
         return False
 
     if msg_type == "stop":
-        # 标 DB ended（短 session）
+        # 1) 先 flush 累计 elapsed 写一条 ledger
+        elapsed = 0
+        owner_user_id: int | None = None
+        db = SessionLocal()
+        try:
+            sess = (
+                db.query(SessionModel)
+                .filter(SessionModel.id == session_id)
+                .one_or_none()
+            )
+            if sess is not None and sess.status == "active":
+                owner_user_id = sess.user_id
+        finally:
+            db.close()
+
+        if owner_user_id is not None:
+            try:
+                from app.sessions.meter import flush_session_charge
+                elapsed = await flush_session_charge(session_id, owner_user_id)
+            except Exception:  # noqa: BLE001
+                logger.exception("flush_session_charge failed sid=%d", session_id)
+
+        # 2) 标 DB ended
         db = SessionLocal()
         try:
             sess = (
@@ -210,10 +232,12 @@ async def _handle_text_message(
                 sess.status = "ended"
                 sess.ended_at = datetime.utcnow()
                 sess.end_reason = "user_stop"
+                sess.total_seconds = elapsed
                 db.commit()
         finally:
             db.close()
-        # 起独立 task 跑 manager.stop —— 不能在当前 receive 循环里 await，
+
+        # 3) 起独立 task 跑 manager.stop —— 不能在当前 receive 循环里 await，
         # 否则 stop 广播 + 关闭所有 ws（含本 ws）会撕裂当前协程。
         asyncio.create_task(manager.stop(session_id, reason="user_stop"))
         return True  # break 主循环；finally 走 remove_connection
