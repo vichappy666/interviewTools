@@ -1,0 +1,40 @@
+[Unit]
+Description=Interview Assistant Backend (FastAPI / uvicorn)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=interview
+Group=interview
+
+# 生产路径（按实际部署位置改）
+WorkingDirectory=/srv/interview/repo/backend
+EnvironmentFile=/srv/interview/repo/backend/.env
+
+# 单 worker：SessionManager + 内存 ws/asr 状态不可跨进程
+ExecStart=/srv/interview/repo/backend/.venv/bin/uvicorn app.main:app \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --workers 1 \
+  --proxy-headers \
+  --forwarded-allow-ips 127.0.0.1
+
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+# 日志走 journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=interview-backend
+
+# 简单加固
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
