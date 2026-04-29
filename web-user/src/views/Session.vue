@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { stopSession as stopSessionApi } from '@/api/sessions'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MarkdownPanel from '@/components/MarkdownPanel.vue'
-import { useAudioCapture } from '@/composables/useAudioCapture'
+import { useAudioCapture, type AudioSourceMode } from '@/composables/useAudioCapture'
 import { useSessionStore, type AnswerSegment } from '@/stores/session'
 import { useUserStore } from '@/stores/user'
 
@@ -16,6 +16,18 @@ const userStore = useUserStore()
 const { start: startMic, stop: stopMic, error: micError } = useAudioCapture()
 
 const sessionId = Number(route.params.id)
+// 从 history.state 读取音频源模式（由 Home.vue 的 router.push 传入）；
+// 直接打开 URL / 刷新页面 → 退化为 mic
+function readAudioMode(): AudioSourceMode {
+  const m = (history.state as { audioMode?: unknown } | null)?.audioMode
+  return m === 'tab' || m === 'mixed' ? m : 'mic'
+}
+const audioMode: AudioSourceMode = readAudioMode()
+const audioModeLabel: Record<AudioSourceMode, string> = {
+  mic: '🎤 麦克风',
+  tab: '🖥️ 系统音频',
+  mixed: '🎤+🖥️ 混合',
+}
 let ws: WebSocket | null = null
 let pingTimer: number | null = null
 
@@ -118,18 +130,8 @@ function connectWs(): void {
   ws = new WebSocket(buildWsUrl())
   ws.binaryType = 'arraybuffer'
 
-  ws.onopen = async () => {
+  ws.onopen = () => {
     sessionStore.connectionState = 'connected'
-    // 启麦：每帧 100ms 16kHz mono Int16 直接 ws.send
-    try {
-      await startMic((buf) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(buf)
-        }
-      })
-    } catch {
-      // composable 已经 set error；这里不重复 alert
-    }
     // 心跳 30s 一次
     pingTimer = window.setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -316,16 +318,31 @@ const segmentLabel: Record<AnswerSegment, string> = {
 const segments: AnswerSegment[] = ['key_points', 'script', 'full']
 
 // ---------------- 生命周期 ----------------
-onMounted(() => {
+onMounted(async () => {
   if (!Number.isFinite(sessionId) || sessionId <= 0) {
     sessionStore.error = '会话 ID 非法'
     return
   }
   sessionStore.reset()
   sessionStore.sessionId = sessionId
-  connectWs()
   document.addEventListener('selectionchange', onSelectionChange)
   document.addEventListener('keydown', onKeydown)
+
+  // 先拿到音频再开 WS：避免 mixed/tab 模式下用户在 Chrome 共享对话框逗留太久，
+  // 后端 ASR session 已分配但音频包未到，触发火山"Timeout waiting next packet"
+  sessionStore.connectionState = 'connecting'
+  try {
+    await startMic((buf) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(buf)
+      }
+    }, audioMode)
+  } catch {
+    // composable 已经 set error；不开 WS，停留在 disconnected
+    sessionStore.connectionState = 'disconnected'
+    return
+  }
+  connectWs()
 })
 
 onBeforeUnmount(() => {
@@ -351,6 +368,7 @@ onBeforeUnmount(() => {
               : '--'
       }}</span>
       <span class="spacer"></span>
+      <span class="audio-mode" :title="'当前音频源：' + audioModeLabel[audioMode]">{{ audioModeLabel[audioMode] }}</span>
       <span class="hud" :class="{ low: sessionStore.balanceLow }">剩余 {{ remainingDisplay }}</span>
       <button class="stop-btn" @click="stopSession">🛑 结束</button>
     </header>
@@ -531,6 +549,15 @@ onBeforeUnmount(() => {
 }
 .top-bar .spacer {
   flex: 1;
+}
+.top-bar .audio-mode {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
 }
 .top-bar .hud {
   background: rgba(126, 184, 240, 0.12);

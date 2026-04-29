@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import AudioSourceDialog from '@/components/AudioSourceDialog.vue'
 import JoinDialog from '@/components/JoinDialog.vue'
 import { useUserStore } from '@/stores/user'
 import { useRouter } from 'vue-router'
@@ -11,19 +12,29 @@ import {
   type SessionRow,
 } from '@/api/sessions'
 import { extractError } from '@/api/client'
+import type { AudioSourceMode } from '@/composables/useAudioCapture'
 
 const store = useUserStore()
 const router = useRouter()
 
+const audioDialogVisible = ref(false)
 const dialogVisible = ref(false)
 const activeSessionId = ref<number | null>(null)
 const activeStartedAt = ref<string>('')
+const pendingAudioMode = ref<AudioSourceMode>('mic')
 const recentSessions = ref<SessionRow[]>([])
 const loadingRecent = ref(false)
 const error = ref<string | null>(null)
 
-async function startInterview(): Promise<void> {
+function startInterview(): void {
+  // 先弹音频源 dialog；用户确认后再走真正的开启流程
   error.value = null
+  audioDialogVisible.value = true
+}
+
+async function onAudioConfirm(mode: AudioSourceMode): Promise<void> {
+  audioDialogVisible.value = false
+  pendingAudioMode.value = mode
   try {
     const active = await getActiveSessions()
     if (active.length > 0) {
@@ -36,15 +47,22 @@ async function startInterview(): Promise<void> {
     }
     // 无 active → 直接开
     const r = await apiStart()
-    router.push(`/session/${r.session_id}`)
+    router.push({ path: `/session/${r.session_id}`, state: { audioMode: mode } })
   } catch (e: any) {
     error.value = extractError(e).message
   }
 }
 
+function onAudioCancel(): void {
+  audioDialogVisible.value = false
+}
+
 function onJoin(): void {
   if (activeSessionId.value !== null) {
-    router.push(`/session/${activeSessionId.value}`)
+    router.push({
+      path: `/session/${activeSessionId.value}`,
+      state: { audioMode: pendingAudioMode.value },
+    })
   }
   dialogVisible.value = false
 }
@@ -54,7 +72,10 @@ async function onNew(): Promise<void> {
   error.value = null
   try {
     const r = await apiStart()
-    router.push(`/session/${r.session_id}`)
+    router.push({
+      path: `/session/${r.session_id}`,
+      state: { audioMode: pendingAudioMode.value },
+    })
   } catch (e: any) {
     error.value = extractError(e).message
   }
@@ -162,6 +183,12 @@ onMounted(() => {
         </li>
       </ul>
     </section>
+
+    <AudioSourceDialog
+      :visible="audioDialogVisible"
+      @confirm="onAudioConfirm"
+      @cancel="onAudioCancel"
+    />
 
     <JoinDialog
       :visible="dialogVisible"
