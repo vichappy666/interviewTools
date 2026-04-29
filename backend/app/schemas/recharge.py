@@ -66,3 +66,26 @@ class OrderListResponse(BaseModel):
     total: int
     page: int
     size: int
+
+
+class AdminOrderRead(OrderRead):
+    """管理后台订单详情（在 OrderRead 基础上增加 username）。
+
+    handler 自行构造 dict 后实例化，from_attributes 不再适用。
+    """
+    model_config = ConfigDict(from_attributes=False)
+
+    username: Optional[str] = None
+
+
+class AdminOrderListResponse(BaseModel):
+    items: list[AdminOrderRead]
+    total: int
+    page: int
+    size: int
+
+
+class ForceActionIn(BaseModel):
+    """force-success / force-fail 请求体。"""
+
+    note: str
