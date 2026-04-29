@@ -175,14 +175,11 @@ cd web-admin && npm run build
 
 ## 部署到 VPS
 
-完整生产部署脚本（Caddy 反代 + systemd + 前端 dist 静态托管）尚未抽象成 spec，
-当前流程参考 `docs/deployment.md`（v2 阶段补完）。简版步骤：
+完整生产部署指南（Ubuntu 22.04 + Caddy 自动 HTTPS + systemd + MySQL）见
+[`docs/deployment-vps.md`](docs/deployment-vps.md)。配套部署产物在 [`deploy/`](deploy/)：
+systemd unit、Caddyfile 模板、`deploy.sh` 升级脚本、`.env.prod.example`。
 
-1. backend `pip install -e .`，systemd 跑 `uvicorn app.main:app --host 127.0.0.1 --port 8000`
-2. `cd web-user && npm run build` → 产出 `dist/` 静态部署
-3. `cd web-admin && npm run build` → 同上
-4. Caddy / Nginx 反代 `/api/*` 和 `/ws/*` 到 backend，其余静态文件
-5. admin 后台改默认密码、生成强 JWT_SECRET、把 ASR / LLM key 通过 admin 配置入库
+跟着文档跑大约 1 小时即可上线含 HTTPS 的服务（v1.1.0 起）。
 
 ---
 
@@ -206,7 +203,8 @@ git checkout v0.3.0-web-layout
 | `v0.4.0-m1` | ✅ | 账号 + 余额 + admin 后台 |
 | `v0.4.0-m2` | ✅ | 面试核心：ASR async + LLM 三段并行流 + WebSocket + 扣费 meter |
 | `v0.4.0-m3` | ✅ | TRC20 充值（D 方案，含 base58check 手写 + 7 项链上校验） |
-| `v1.0.0` | 🚧 | 历史回看 + 体验打磨 + README（**第一版正式 release**） |
+| `v1.0.0` | ✅ | 历史回看 + 体验打磨 + README（**第一版正式 release**） |
+| `v1.1.0` | 🚧 | 首次可上线版（VPS 部署文档 + systemd + Caddy 产物） |
 
 ---
 
