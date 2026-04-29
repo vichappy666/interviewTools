@@ -21,6 +21,15 @@ class CreateOrderIn(BaseModel):
     from_address: str
 
 
+class SubmitHashIn(BaseModel):
+    """POST /api/recharge/orders/{id}/submit 请求体。
+
+    - tx_hash：用户上链转账后的交易哈希（64 hex；可带 0x 前缀，后端去前缀后再校）
+    """
+
+    tx_hash: str
+
+
 class OrderRead(BaseModel):
     """订单详情/列表元素。"""
 
