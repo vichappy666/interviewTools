@@ -1,4 +1,4 @@
-"""DTOs for sessions / session_qa（M2 T3+ 会用到，T2 仅定义 Read 形态）。"""
+"""DTOs for sessions / session_qa。"""
 from datetime import datetime
 from typing import Optional
 
@@ -29,3 +29,15 @@ class SessionQARead(BaseModel):
     asked_at: datetime
     finished_at: Optional[datetime] = None
     source: str
+
+
+class SessionStartResponse(BaseModel):
+    session_id: int
+    ws_url: str
+
+
+class SessionListResponse(BaseModel):
+    items: list[SessionRead]
+    total: int
+    page: int
+    size: int
