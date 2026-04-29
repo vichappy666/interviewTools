@@ -18,6 +18,7 @@ from app.schemas.session import (
     SessionRead,
     SessionStartResponse,
 )
+from app.sessions.manager import manager as session_manager
 
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -69,7 +70,7 @@ def start_session(
 # ---------------- POST /{id}/stop ----------------
 
 @router.post("/{session_id}/stop", response_model=SessionRead)
-def stop_session(
+async def stop_session(
     session_id: int,
     current: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -86,8 +87,9 @@ def stop_session(
             detail={"error": {"code": "FORBIDDEN", "message": "无权操作该会话"}},
         )
 
-    # 已 ended：幂等返回当前状态
+    # 已 ended：幂等返回当前状态（仍然兜底通知一次内存 manager，防止脏 runtime 残留）
     if s.status == "ended":
+        await session_manager.stop(session_id, reason="user_stop")
         return SessionRead.model_validate(s)
 
     s.status = "ended"
@@ -96,7 +98,9 @@ def stop_session(
     db.commit()
     db.refresh(s)
 
-    # TODO(M2 T4): 通知 SessionManager 停止对应的内存会话 + 关闭 WebSocket
+    # 通知 SessionManager 停止对应的内存会话 + 关闭 WebSocket
+    # （T8 真实 ws handler 上线后会有连接需要被关；T4 阶段 manager 里通常没注册，stop 会 no-op）
+    await session_manager.stop(session_id, reason="user_stop")
 
     return SessionRead.model_validate(s)
 
