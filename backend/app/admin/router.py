@@ -2,12 +2,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
+from app import configs as configs_module
 from app.admin.auth import login as admin_login_service
 from app.audit import write as audit_write
 from app.billing.ledger import grant as billing_grant
 from app.deps import get_current_admin, get_db
 from app.models.admin import Admin
 from app.models.balance_ledger import BalanceLedger
+from app.models.config_kv import ConfigKV
 from app.models.user import User
 from app.schemas.admin import (
     AdminAuthOut,
@@ -20,6 +22,7 @@ from app.schemas.admin import (
     GrantIn,
     UpdateUserIn,
 )
+from app.schemas.config import ConfigItemOut, ConfigPutIn
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -166,3 +169,36 @@ def grant_balance(
     db.commit()
     user = db.query(User).filter(User.id == user_id).one()
     return AdminUserOut.model_validate(user)
+
+
+# ---------------- configs ----------------
+
+@router.get("/configs", response_model=list[ConfigItemOut])
+def list_configs(
+    _: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[ConfigItemOut]:
+    rows = db.query(ConfigKV).order_by(ConfigKV.key.asc()).all()
+    return [ConfigItemOut(key=r.key, value=r.value) for r in rows]
+
+
+@router.put("/configs/{key}", response_model=ConfigItemOut)
+def put_config(
+    key: str,
+    payload: ConfigPutIn,
+    request: Request,
+    admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ConfigItemOut:
+    row = configs_module.save(db, key, payload.value)
+    audit_write(
+        db,
+        admin_id=admin.id,
+        action="update_config",
+        target_type="config",
+        target_id=key,
+        payload={"value": payload.value},
+        ip=_client_ip(request),
+    )
+    db.commit()
+    return ConfigItemOut(key=row.key, value=row.value)
