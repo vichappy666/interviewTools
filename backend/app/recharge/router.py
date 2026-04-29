@@ -131,7 +131,12 @@ def get_order(
     db: Session = Depends(get_db),
 ) -> OrderRead:
     order = (
-        db.query(RechargeOrder).filter(RechargeOrder.id == order_id).one_or_none()
+        db.query(RechargeOrder)
+        .filter(
+            RechargeOrder.id == order_id,
+            RechargeOrder.user_id == current.id,
+        )
+        .one_or_none()
     )
     if order is None:
         raise HTTPException(
@@ -139,10 +144,5 @@ def get_order(
             detail={
                 "error": {"code": "ORDER_NOT_FOUND", "message": "订单不存在"}
             },
-        )
-    if order.user_id != current.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": {"code": "FORBIDDEN", "message": "无权查看该订单"}},
         )
     return OrderRead.model_validate(order)

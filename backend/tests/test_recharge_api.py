@@ -289,8 +289,8 @@ def test_get_detail_not_found(client, db_session):
     assert r.json()["detail"]["error"]["code"] == "ORDER_NOT_FOUND"
 
 
-def test_get_detail_forbidden(client, db_session):
-    """访问别人的订单 → 403 FORBIDDEN。"""
+def test_get_detail_other_users_returns_404(client, db_session):
+    """访问别人的订单也返回 404，避免泄露订单 id 是否存在。"""
     a = _make_user(db_session, username="alice")
     b = _make_user(db_session, username="bob")
 
@@ -302,5 +302,32 @@ def test_get_detail_forbidden(client, db_session):
     oid = r1.json()["id"]
 
     r2 = client.get(f"/api/recharge/orders/{oid}", headers=_auth_headers(b.id))
-    assert r2.status_code == 403
-    assert r2.json()["detail"]["error"]["code"] == "FORBIDDEN"
+    assert r2.status_code == 404
+    assert r2.json()["detail"]["error"]["code"] == "ORDER_NOT_FOUND"
+
+
+def test_create_order_snapshot_rate_immutable(client, db_session):
+    """订单创建后改 configs.rate_per_usdt，订单的 rate_per_usdt 不变。"""
+    configs_module._cache["recharge.rate_per_usdt"] = 60
+    u = _make_user(db_session)
+
+    r = client.post(
+        "/api/recharge/orders",
+        headers=_auth_headers(u.id),
+        json={"amount_usdt": "50", "from_address": VALID_FROM},
+    )
+    assert r.status_code == 200
+    oid = r.json()["id"]
+    assert r.json()["rate_per_usdt"] == 60
+
+    # 改 configs（既改 cache，也确保读路径不会再找回原值）
+    configs_module._cache["recharge.rate_per_usdt"] = 999
+
+    # 重新从 DB 读
+    db_session.expire_all()
+    order = db_session.get(RechargeOrder, oid)
+    assert order.rate_per_usdt == 60
+
+    # API 详情也仍是 60
+    r2 = client.get(f"/api/recharge/orders/{oid}", headers=_auth_headers(u.id))
+    assert r2.json()["rate_per_usdt"] == 60
