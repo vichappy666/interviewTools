@@ -42,6 +42,11 @@ const routes = [
     component: () => import('@/views/Session.vue'),
   },
   {
+    path: '/sessions/:id',
+    name: 'session-history',
+    component: () => import('@/views/SessionHistory.vue'),
+  },
+  {
     path: '/recharge',
     name: 'recharge',
     component: () => import('@/views/Recharge.vue'),

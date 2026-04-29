@@ -71,6 +71,14 @@ function onCancel(): void {
   activeSessionId.value = null
 }
 
+function openSession(s: SessionRow): void {
+  if (s.status === 'active') {
+    router.push(`/session/${s.id}`)
+  } else {
+    router.push(`/sessions/${s.id}`)
+  }
+}
+
 function recharge(): void {
   router.push('/recharge')
 }
@@ -148,11 +156,15 @@ onMounted(() => {
       <p v-if="loadingRecent" class="empty">加载中...</p>
       <p v-else-if="recentSessions.length === 0" class="empty">暂无</p>
       <ul v-else class="recent-list">
-        <li v-for="s in recentSessions" :key="s.id">
+        <li
+          v-for="s in recentSessions"
+          :key="s.id"
+          class="clickable"
+          @click="openSession(s)"
+        >
           <span class="recent-date">{{ formatRecentDate(s.started_at) }}</span>
           <span class="recent-status" :class="s.status">{{ s.status === 'active' ? '进行中' : '已结束' }}</span>
           <span class="recent-duration">{{ formatDuration(s.total_seconds) }}</span>
-          <span class="recent-hint">M4 支持回看</span>
         </li>
       </ul>
     </section>
@@ -244,5 +256,6 @@ onMounted(() => {
 .recent-status { color: var(--text-muted); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.04); }
 .recent-status.active { color: #7eb8f0; background: rgba(126,184,240,0.12); }
 .recent-duration { color: var(--text-dim); margin-left: auto; font-variant-numeric: tabular-nums; }
-.recent-hint { color: var(--text-muted); font-size: 11px; }
+.recent-list li.clickable { cursor: pointer; transition: background 0.15s; }
+.recent-list li.clickable:hover { background: rgba(126,184,240,0.08); }
 </style>
