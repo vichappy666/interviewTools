@@ -1,7 +1,8 @@
 # 面试助手 SaaS
 
 > 实时语音转写 + 多模型 AI 助答的云端面试辅助工具。
-> v1.0.0 起为云端 SaaS（FastAPI + Vue 3）；旧版本 PySide6 桌面端归档于 [`legacy/`](legacy/)。
+> v1.0.0 起为云端 SaaS（FastAPI + Vue 3）；当前最新 **v1.4.0**。
+> 旧版本 PySide6 桌面端归档于 [`legacy/`](legacy/)。
 
 ---
 
@@ -32,11 +33,13 @@
 - 余额账本（balance_ledger）+ admin 加减时间
 - 多设备并发面试（弹"加入 / 新开 / 取消"）
 - 实时 ASR（火山引擎流式，自动问题检测）
+- **音频源 3 选 1**（v1.4 起）：仅麦克风 / 仅系统音频（共享浏览器 tab）/ 麦克风+系统音频混合 —— Chrome 限定后两项
 - LLM 三段并行流（要点 / 话术 / 完整答案）
 - 按 wall-clock 秒扣费（结束面试时一笔 ledger）
 - USDT-TRC20 充值（D 方案：from-address 绑定 + 7 项链上校验，含 Shasta 测试网）
 - 历史面试详情回看（含 LLM 三段）
 - admin 后台：用户 / 充值订单（强制成功 / 失败 / 重置）/ 系统配置
+- 结构化日志（prod/ci 单行 JSON）+ `/api/health/db` 探针
 
 ---
 
@@ -119,9 +122,13 @@ cd web-admin && npm install && npm run dev   # http://localhost:5174
 
 1. http://localhost:5173 注册一个用户账号
 2. admin 后台 → 用户管理 → 找到该账号 → "加时间" 加 60 分钟
-3. 用户端首页 → "🎤 开始面试" → 浏览器允许麦克风
-4. 说话 → 看到实时转写 + LLM 三段答案
+3. 用户端首页 → "🎤 开始面试" → 弹音频源选择 dialog → 选"仅麦克风"
+4. 浏览器允许麦克风 → 说话 → 看到实时转写 + LLM 三段答案
 5. 结束面试 → 首页"最近面试"点进去看历史 QA
+
+> **想转写对方说的话**（Zoom / 腾讯会议 / Google Meet 网页版）？步骤 3 选"仅系统音频"或
+> "麦克风+系统音频混合"，Chrome 弹分享框时**必须勾"同时分享标签页音频"**。Safari/
+> Firefox 仅支持仅麦克风模式。
 
 ---
 
@@ -209,7 +216,8 @@ git checkout v0.3.0-web-layout
 | `v1.0.0` | ✅ | 历史回看 + 体验打磨 + README（**第一版正式 release**） |
 | `v1.1.0` | ✅ | 首次可上线版（VPS 部署文档 + systemd + Caddy 产物） |
 | `v1.2.0` | ✅ | CI workflow（pytest + 双前端 build，push/PR 自动跑） |
-| `v1.3.0` | 🚧 | 结构化日志（prod JSON）+ /api/health/db 探针 |
+| `v1.3.0` | ✅ | 结构化日志（prod JSON）+ /api/health/db 探针 |
+| `v1.4.0` | ✅ | 浏览器系统音频转写：开始面试弹音频源选择（mic / tab / mixed），Chrome 共享标签页拿对方音频 |
 
 ---
 
