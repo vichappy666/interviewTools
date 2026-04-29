@@ -439,15 +439,15 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .session-page {
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  max-width: 1400px;
-  margin: 0 auto;
   padding: 14px;
   gap: 10px;
   box-sizing: border-box;
   background: radial-gradient(ellipse at top, #1a1a2e 0%, var(--bg0) 70%);
+  overflow: hidden;
 }
 
 /* ---------- 顶栏 ---------- */
