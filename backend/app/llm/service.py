@@ -93,9 +93,20 @@ class LLMService:
                 f"Unknown LLM provider type: {default_name}"
             )
 
-        cfg = {"api_key": entry.get("api_key"), "model": entry.get("model")}
-        self.provider: LLMProvider = cls(cfg)
+        # 保存 cfg 而非单一 provider 实例：每段流单独 build provider，
+        # 避免 3 段并行共享同一个 HTTP client 时的连接池冲突
+        self._provider_cls = cls
+        self._provider_cfg = {
+            "api_key": entry.get("api_key"),
+            "model": entry.get("model"),
+        }
         self.provider_name = default_name
+        # 兼容老测试：暴露一个默认 provider 实例
+        self.provider: LLMProvider = cls(self._provider_cfg)
+
+    def _build_provider(self) -> LLMProvider:
+        """每段 segment 独立 build，避免共享 client 连接池竞争。"""
+        return self._provider_cls(self._provider_cfg)
 
     async def _stream_segment(
         self, name: str, question: str
@@ -106,12 +117,16 @@ class LLMService:
         （DeepSeekProvider 会关 HTTP stream），保证取消时资源释放。
         """
         yield LLMEvent(name=name, type="start")
+        logger.info("[llm] segment %s starting", name)
 
         system_prompt = SECTION_PROMPTS[name]
         sync_iter: Iterator[str] | None = None
+        chunk_count = 0
         try:
             try:
-                sync_iter = self.provider.ask_stream(question, system_prompt)
+                # 每段独立 provider 实例，避免共享 HTTP client 并发冲突
+                provider = self._build_provider()
+                sync_iter = provider.ask_stream(question, system_prompt)
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "llm segment %s: ask_stream init failed: %s", name, e
@@ -126,7 +141,8 @@ class LLMService:
                     )
                 except Exception as e:  # noqa: BLE001
                     logger.warning(
-                        "llm segment %s: stream error: %s", name, e
+                        "llm segment %s: stream error after %d chunks: %s",
+                        name, chunk_count, e
                     )
                     yield LLMEvent(name=name, type="error", text=str(e))
                     return
@@ -134,8 +150,10 @@ class LLMService:
                 if chunk is _SENTINEL:
                     break
                 if chunk:
+                    chunk_count += 1
                     yield LLMEvent(name=name, type="chunk", text=chunk)
 
+            logger.info("[llm] segment %s done (chunks=%d)", name, chunk_count)
             yield LLMEvent(name=name, type="end")
         finally:
             # GeneratorExit / Cancel：关同步 generator

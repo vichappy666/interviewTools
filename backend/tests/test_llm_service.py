@@ -70,10 +70,15 @@ class MockProvider:
 
 
 def _make_service_with_provider(provider) -> LLMService:
-    """构造一个 LLMService，跳过 __init__ 真实 provider 路由，直接注入 mock。"""
+    """构造一个 LLMService，跳过 __init__ 真实 provider 路由，直接注入 mock。
+
+    每段 _stream_segment 会调 _build_provider() 拿独立实例（生产环境避免连接池竞争），
+    但测试里希望复用同一个 mock，所以 _build_provider 直接返回这个共享 provider。
+    """
     svc = LLMService.__new__(LLMService)
     svc.provider = provider
     svc.provider_name = "mock"
+    svc._build_provider = lambda: provider  # type: ignore[method-assign]
     return svc
 
 
