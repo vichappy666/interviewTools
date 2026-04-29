@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -33,6 +33,7 @@ from .tron import TronClient
 #: USDT-TRC20 主网合约地址（base58）
 USDT_CONTRACT_MAINNET = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 
+# TODO(T10): Shasta 占位合约，主网切换前 admin 需校验合约地址。
 #: Shasta 测试网占位（JST 测试合约；T10 端到端实测时会再校验）
 USDT_CONTRACT_SHASTA = "TG3XXyExBkPp9nzdajDZsozEu4BkaSJozs"
 
@@ -197,7 +198,14 @@ def verify_tx(
     expires_at: datetime,
     confirmations_required: int = 19,
 ) -> VerifyResult:
-    """7 项链上校验。任一失败立即返回，不继续。"""
+    """7 项链上校验。任一失败立即返回，不继续。
+
+    expires_at 必须为 naive UTC datetime（与 T2 写入的 ``datetime.utcnow() + 24h`` 同
+    形态）；本函数内部把 blockTimeStamp 也归一为 naive UTC 后再比较。
+
+    可能抛 ``httpx.HTTPError`` / ``httpx.RequestError``（链上 RPC 故障）。
+    调用方（T4 submit handler）需捕获并映射成 503 / TRON_RPC_ERROR 响应。
+    """
 
     # 1. 交易存在
     info = tron.get_transaction_info(tx_hash)
@@ -261,10 +269,12 @@ def verify_tx(
             f"确认数不足（需 {confirmations_required}）",
         )
 
-    # 7. 时效
+    # 7. 时效（TronGrid blockTimeStamp 是 UTC 毫秒；归一为 naive UTC 与 expires_at 比较）
     block_ts_ms = info.get("blockTimeStamp")
     if block_ts_ms is not None:
-        block_ts = datetime.fromtimestamp(int(block_ts_ms) / 1000)
+        block_ts = datetime.fromtimestamp(
+            int(block_ts_ms) / 1000, tz=timezone.utc
+        ).replace(tzinfo=None)
         if block_ts > expires_at:
             return VerifyResult(False, "TX_AFTER_EXPIRY", "交易时间晚于订单过期时刻")
 

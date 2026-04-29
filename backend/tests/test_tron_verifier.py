@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -87,7 +87,9 @@ def _make_info(
     has_id: bool = True,
 ) -> dict:
     if block_ts_ms is None:
-        block_ts_ms = int(datetime.utcnow().timestamp() * 1000)
+        # 用 tz-aware now 算真实 UTC ms，避免 naive utcnow().timestamp() 在
+        # 非 UTC 主机上偏移本地时区。
+        block_ts_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
     info: dict = {
         "blockNumber": block_number,
         "blockTimeStamp": block_ts_ms,
@@ -223,6 +225,23 @@ def test_wrong_contract():
     )
     assert res.ok is False
     assert res.code == "WRONG_CONTRACT"
+
+
+def test_contract_address_base58_form_matches():
+    """TronGrid 不同端点可能把 contract_address 返回成 base58 而非 hex；
+    _addr_match 必须把两种形态视为相等，verify_tx 不能因此误判 WRONG_CONTRACT。"""
+    tron, to_b58, from_b58 = _happy_setup(contract_addr_hex=CONTRACT_BASE58)
+    res = verify_tx(
+        tron,
+        network="mainnet",
+        tx_hash="x",
+        expected_to=to_b58,
+        expected_from=from_b58,
+        min_amount_usdt=Decimal("10"),
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+    )
+    assert res.ok is True
+    assert res.code == "OK"
 
 
 # ============================================================
@@ -366,8 +385,11 @@ def test_not_enough_confirmations():
 
 
 def test_tx_after_expiry():
-    # block 时间设为 1 小时后
-    future_ts_ms = int((datetime.utcnow() + timedelta(hours=1)).timestamp() * 1000)
+    # block 时间设为 1 小时后（注意：datetime.utcnow() 是 naive，不能直接 .timestamp()，
+    # 那样会按本地时区解释；这里用 datetime.now(tz=utc).timestamp() 拿真实 UTC ts）
+    future_ts_ms = int(
+        (datetime.now(tz=timezone.utc) + timedelta(hours=1)).timestamp() * 1000
+    )
     tron, to_b58, from_b58 = _happy_setup(block_ts_ms=future_ts_ms)
     expires_at = datetime.utcnow()  # 已过期
     res = verify_tx(
