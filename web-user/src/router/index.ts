@@ -52,6 +52,11 @@ const routes = [
     component: () => import('@/views/RechargePay.vue'),
   },
   {
+    path: '/orders',
+    name: 'orders',
+    component: () => import('@/views/Orders.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },

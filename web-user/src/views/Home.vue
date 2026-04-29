@@ -129,6 +129,10 @@ onMounted(() => {
         🪙 充值
         <span>USDT-TRC20 买面试时间</span>
       </button>
+      <button class="action" @click="router.push('/orders')">
+        🧾 充值历史
+        <span>查看 / 继续未完成订单</span>
+      </button>
       <button class="action" @click="router.push('/ledger')">
         📜 余额流水
         <span>查看充值 / 扣费记录</span>
