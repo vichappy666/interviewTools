@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import configs as configs_module
 from app.admin.auth import login as admin_login_service
 from app.audit import write as audit_write
+from app.auth.security import hash_password
 from app.billing.ledger import grant as billing_grant
 from app.deps import get_current_admin, get_db
 from app.models.admin import Admin
@@ -20,6 +21,7 @@ from app.schemas.admin import (
     AdminUserListOut,
     AdminUserOut,
     GrantIn,
+    ResetPasswordIn,
     UpdateUserIn,
 )
 from app.schemas.config import ConfigItemOut, ConfigPutIn
@@ -168,6 +170,37 @@ def grant_balance(
     )
     db.commit()
     user = db.query(User).filter(User.id == user_id).one()
+    return AdminUserOut.model_validate(user)
+
+
+# ---------------- reset password ----------------
+
+@router.post("/users/{user_id}/reset-password", response_model=AdminUserOut)
+def reset_password(
+    user_id: int,
+    payload: ResetPasswordIn,
+    request: Request,
+    admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserOut:
+    user = db.query(User).filter(User.id == user_id).one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "USER_NOT_FOUND", "message": "用户不存在"}},
+        )
+    user.password_hash = hash_password(payload.new_password)
+    audit_write(
+        db,
+        admin_id=admin.id,
+        action="reset_password",
+        target_type="user",
+        target_id=user.id,
+        payload={},  # 不记新密码
+        ip=_client_ip(request),
+    )
+    db.commit()
+    db.refresh(user)
     return AdminUserOut.model_validate(user)
 
 

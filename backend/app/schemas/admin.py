@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AdminOut(BaseModel):
@@ -63,3 +63,16 @@ class GrantIn(BaseModel):
 
 class UpdateUserIn(BaseModel):
     status: Optional[int] = Field(None, ge=0, le=1)
+
+
+class ResetPasswordIn(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _check_password(cls, v: str) -> str:
+        has_alpha = any(c.isalpha() for c in v)
+        has_digit = any(c.isdigit() for c in v)
+        if not (has_alpha and has_digit):
+            raise ValueError("密码必须同时包含字母和数字")
+        return v

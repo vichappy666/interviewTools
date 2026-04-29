@@ -53,3 +53,13 @@ export async function grantBalance(
   const res = await api.post<AdminUser>(`/api/admin/users/${id}/grant`, payload)
   return res.data
 }
+
+export async function resetUserPassword(
+  id: number,
+  newPassword: string,
+): Promise<AdminUser> {
+  const res = await api.post<AdminUser>(`/api/admin/users/${id}/reset-password`, {
+    new_password: newPassword,
+  })
+  return res.data
+}

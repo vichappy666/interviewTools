@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import AdminLayout from '@/components/AdminLayout.vue'
 import GrantDialog from '@/components/GrantDialog.vue'
-import { getUserDetail, patchUser, type AdminUser, type AdminLedgerItem } from '@/api/users'
+import { getUserDetail, patchUser, resetUserPassword, type AdminUser, type AdminLedgerItem } from '@/api/users'
 import { extractError } from '@/api/client'
 
 const props = defineProps<{ id: number }>()
@@ -53,6 +53,38 @@ function openGrant(): void {
   grantOpen.value = true
 }
 
+async function resetPassword(): Promise<void> {
+  if (!user.value) return
+  let newPwd: string
+  try {
+    const res = await ElMessageBox.prompt(
+      `为用户 ${user.value.username} 设置新密码（至少 8 位，含字母+数字）`,
+      '重置密码',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputValidator: (v) => {
+          if (!v || v.length < 8) return '密码至少 8 位'
+          const hasAlpha = /[a-zA-Z]/.test(v)
+          const hasDigit = /\d/.test(v)
+          if (!hasAlpha || !hasDigit) return '密码必须同时包含字母和数字'
+          return true
+        },
+      },
+    )
+    newPwd = res.value
+  } catch {
+    return
+  }
+  try {
+    await resetUserPassword(props.id, newPwd)
+    ElMessage.success('密码已重置')
+  } catch (err) {
+    ElMessage.error(extractError(err).message)
+  }
+}
+
 function onGranted(): void {
   load()
 }
@@ -94,6 +126,7 @@ function formatBalance(s: number): string {
           <span class="title">用户 #{{ user.id }} · {{ user.username }}</span>
           <div class="actions">
             <el-button type="primary" @click="openGrant">手动加减时长</el-button>
+            <el-button type="warning" plain @click="resetPassword">重置密码</el-button>
             <el-button :type="user.status === 1 ? 'danger' : 'success'" plain @click="toggleStatus">
               {{ user.status === 1 ? '封禁' : '启用' }}
             </el-button>
