@@ -1,13 +1,74 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import JoinDialog from '@/components/JoinDialog.vue'
 import { useUserStore } from '@/stores/user'
 import { useRouter } from 'vue-router'
+import {
+  startSession as apiStart,
+  getActiveSessions,
+  listSessions,
+  type SessionRow,
+} from '@/api/sessions'
 
 const store = useUserStore()
 const router = useRouter()
 
-function startInterview(): void {
-  alert('面试功能将在 M2 上线，敬请期待。')
+const dialogVisible = ref(false)
+const activeSessionId = ref<number | null>(null)
+const activeStartedAt = ref<string>('')
+const recentSessions = ref<SessionRow[]>([])
+const loadingRecent = ref(false)
+const error = ref<string | null>(null)
+
+function describeStartError(e: any): string {
+  const code = e?.response?.data?.error?.code ?? e?.response?.data?.detail?.error?.code
+  if (code === 'INSUFFICIENT_BALANCE') return '余额不足，请先充值'
+  if (code === 'SESSION_LIMIT') return '已达最大并发会话数（请先结束其他会话）'
+  return '启动失败：' + (e?.message || '未知错误')
+}
+
+async function startInterview(): Promise<void> {
+  error.value = null
+  try {
+    const active = await getActiveSessions()
+    if (active.length > 0) {
+      // 有 active → 弹窗，让用户选择加入或新开
+      const a = active[0]
+      activeSessionId.value = a.id
+      activeStartedAt.value = a.started_at
+      dialogVisible.value = true
+      return
+    }
+    // 无 active → 直接开
+    const r = await apiStart()
+    router.push(`/session/${r.session_id}`)
+  } catch (e: any) {
+    error.value = describeStartError(e)
+  }
+}
+
+function onJoin(): void {
+  if (activeSessionId.value !== null) {
+    router.push(`/session/${activeSessionId.value}`)
+  }
+  dialogVisible.value = false
+}
+
+async function onNew(): Promise<void> {
+  dialogVisible.value = false
+  error.value = null
+  try {
+    const r = await apiStart()
+    router.push(`/session/${r.session_id}`)
+  } catch (e: any) {
+    error.value = describeStartError(e)
+  }
+}
+
+function onCancel(): void {
+  dialogVisible.value = false
+  activeSessionId.value = null
 }
 
 function recharge(): void {
@@ -21,6 +82,33 @@ function formatBalance(seconds: number): string {
   const s = seconds % 60
   return `${h}h ${m}m ${s}s`
 }
+
+function formatRecentDate(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+async function loadRecent(): Promise<void> {
+  loadingRecent.value = true
+  try {
+    const r = await listSessions(1, 5)
+    recentSessions.value = r.items
+  } catch {
+    // 忽略：M2 不阻塞主流程
+  } finally {
+    loadingRecent.value = false
+  }
+}
+
+onMounted(() => {
+  loadRecent()
+})
 </script>
 
 <template>
@@ -31,7 +119,7 @@ function formatBalance(seconds: number): string {
         当前余额可用 <strong>{{ store.user ? formatBalance(store.user.balance_seconds) : '...' }}</strong>
       </p>
       <button class="big-cta" @click="startInterview">🎤 开始面试</button>
-      <p class="footer-hint">点击按钮开始面试会话（M2 上线）</p>
+      <p v-if="error" class="error-msg">{{ error }}</p>
     </section>
 
     <section class="actions">
@@ -51,8 +139,25 @@ function formatBalance(seconds: number): string {
 
     <section class="recent">
       <h2>最近面试</h2>
-      <p class="empty">暂无（M2 完成后将在此展示历史）</p>
+      <p v-if="loadingRecent" class="empty">加载中...</p>
+      <p v-else-if="recentSessions.length === 0" class="empty">暂无</p>
+      <ul v-else class="recent-list">
+        <li v-for="s in recentSessions" :key="s.id">
+          <span class="recent-date">{{ formatRecentDate(s.started_at) }}</span>
+          <span class="recent-status" :class="s.status">{{ s.status === 'active' ? '进行中' : '已结束' }}</span>
+          <span class="recent-duration">{{ formatDuration(s.total_seconds) }}</span>
+          <span class="recent-hint">M4 支持回看</span>
+        </li>
+      </ul>
     </section>
+
+    <JoinDialog
+      :visible="dialogVisible"
+      :started-at="activeStartedAt"
+      @join="onJoin"
+      @new="onNew"
+      @cancel="onCancel"
+    />
   </AppLayout>
 </template>
 
@@ -82,7 +187,7 @@ function formatBalance(seconds: number): string {
   box-shadow: 0 8px 28px rgba(70, 120, 200, 0.35);
 }
 .big-cta:hover { filter: brightness(1.1); transform: translateY(-1px); }
-.footer-hint { color: var(--text-muted); margin-top: 18px; font-size: 12px; }
+.error-msg { color: #f99; margin-top: 14px; font-size: 13px; }
 
 .actions {
   display: grid;
@@ -120,4 +225,18 @@ function formatBalance(seconds: number): string {
 }
 .recent h2 { color: var(--text-dim); font-size: 13px; font-weight: 700; letter-spacing: 2px; margin: 0 0 12px; text-transform: uppercase; }
 .empty { color: var(--text-muted); font-size: 13px; }
+
+.recent-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.recent-list li {
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(126,184,240,0.04);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.recent-date { color: var(--text); font-weight: 600; min-width: 90px; }
+.recent-status { color: var(--text-muted); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,0.04); }
+.recent-status.active { color: #7eb8f0; background: rgba(126,184,240,0.12); }
+.recent-duration { color: var(--text-dim); margin-left: auto; font-variant-numeric: tabular-nums; }
+.recent-hint { color: var(--text-muted); font-size: 11px; }
 </style>

@@ -50,3 +50,26 @@ export async function getSessionQA(sessionId: number): Promise<SessionQA[]> {
   const res = await api.get<SessionQA[]>(`/api/sessions/${sessionId}/qa`)
   return res.data
 }
+
+export interface SessionRow {
+  id: number
+  user_id: number
+  started_at: string
+  ended_at: string | null
+  total_seconds: number
+  end_reason: string | null
+  status: 'active' | 'ended'
+}
+
+export interface ListResponse {
+  items: SessionRow[]
+  total: number
+  page: number
+  size: number
+}
+
+/** 分页查询当前用户的会话列表（首页"最近面试"用）。 */
+export async function listSessions(page = 1, size = 20): Promise<ListResponse> {
+  const res = await api.get<ListResponse>('/api/sessions/', { params: { page, size } })
+  return res.data
+}
