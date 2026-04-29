@@ -6,7 +6,7 @@ from app.db import Base
 class BalanceLedger(Base):
     __tablename__ = "balance_ledger"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     delta_seconds = Column(Integer, nullable=False)
     reason = Column(
