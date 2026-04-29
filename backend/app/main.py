@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
 from app.billing.router import router as billing_router
 from app.config import settings
@@ -26,3 +27,4 @@ def health():
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(billing_router)
+app.include_router(admin_router)
