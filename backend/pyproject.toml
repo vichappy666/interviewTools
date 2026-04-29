@@ -1,0 +1,44 @@
+[project]
+name = "interview-backend"
+version = "0.1.0"
+description = "面试助手 SaaS 后端"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "sqlalchemy>=2.0",
+    "pymysql>=1.1",
+    "alembic>=1.13",
+    "bcrypt>=4.1",
+    "pyjwt>=2.8",
+    "httpx>=0.27",
+    "websockets>=12.0",
+    # 业务模块依赖（搬迁后保留，搬迁模块通过 os.getenv 读 key，
+    # 不引用项目内 config.py，故无需改 import）
+    "numpy>=1.24",                 # asr.py 用
+    "volcengine-audio>=0.2.0",     # asr.py 用
+    "openai>=1.54",                # llm.py 用（DeepSeek 也走 OpenAI 兼容协议）
+    "anthropic>=0.39",             # llm.py 用
+    "google-generativeai>=0.8",    # llm.py 用
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

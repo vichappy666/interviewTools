@@ -1,0 +1,42 @@
+# 用户端 - 静态 + API/WS 反代
+app.example.com {
+    encode zstd gzip
+
+    # 后端 API 与 WebSocket 反代（HTTP 上游，本机 8000）
+    @api path /api/* /ws/*
+    reverse_proxy @api 127.0.0.1:8000
+
+    # 其余走前端 dist
+    root * /var/www/web-user/dist
+    try_files {path} /index.html
+    file_server
+
+    log {
+        output file /var/log/caddy/app.access.log
+        format console
+    }
+}
+
+# 管理端 - 单独子域，便于将来加 IP 白名单
+admin.example.com {
+    encode zstd gzip
+
+    @api path /api/* /ws/*
+    reverse_proxy @api 127.0.0.1:8000
+
+    root * /var/www/web-admin/dist
+    try_files {path} /index.html
+    file_server
+
+    # 可选：给 admin 加 IP 白名单（启用时把上面的 reverse_proxy / file_server 包进 handle）
+    # @internal client_ip 1.2.3.4/32
+    # handle @internal {
+    #     ...
+    # }
+    # respond 403
+
+    log {
+        output file /var/log/caddy/admin.access.log
+        format console
+    }
+}
