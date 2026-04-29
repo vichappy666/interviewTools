@@ -22,7 +22,12 @@ const routes = [
     path: '/users/:id',
     name: 'user-detail',
     component: () => import('@/views/UserDetail.vue'),
-    props: (route) => ({ id: Number(route.params.id) }),
+    props: (route: RouteLocationNormalized) => ({ id: Number(route.params.id) }),
+  },
+  {
+    path: '/configs',
+    name: 'configs',
+    component: () => import('@/views/Configs.vue'),
   },
   {
     path: '/:pathMatch(.*)*',

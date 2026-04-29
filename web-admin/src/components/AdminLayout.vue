@@ -30,8 +30,8 @@ function logout(): void {
         <el-menu-item index="/recharge" disabled>
           <template #title>充值订单（M3）</template>
         </el-menu-item>
-        <el-menu-item index="/configs" disabled>
-          <template #title>系统配置（M2）</template>
+        <el-menu-item index="/configs">
+          <template #title>系统配置</template>
         </el-menu-item>
       </el-menu>
     </el-aside>
